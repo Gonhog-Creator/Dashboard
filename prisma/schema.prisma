@@ -1,0 +1,100 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Project {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  color     String?
+  createdAt DateTime @default(now())
+  tasks     Task[]
+}
+
+model Task {
+  id          String    @id @default(cuid())
+  title       String
+  notes       String?
+  done        Boolean   @default(false)
+  priority    Int       @default(0) // 0=none 1=low 2=med 3=high
+  dueDate     DateTime?
+  projectId   String?
+  project     Project?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  isAstro     Boolean   @default(false) // astro prep task list
+  createdAt   DateTime  @default(now())
+  completedAt DateTime?
+
+  @@index([done, dueDate])
+}
+
+model AstroTarget {
+  id           String         @id @default(cuid())
+  name         String         @unique // OBJECT header value, normalized
+  totalFrames  Int            @default(0)
+  totalSeconds Float          @default(0)
+  totalBytes   Float          @default(0)
+  lastImagedAt DateTime?
+  published    Boolean        @default(false) // on PersonalWebsite
+  sessions     AstroSession[]
+  updatedAt    DateTime       @updatedAt
+}
+
+model AstroSession {
+  id         String      @id @default(cuid())
+  targetId   String
+  target     AstroTarget @relation(fields: [targetId], references: [id], onDelete: Cascade)
+  date       String // session date (YYYY-MM-DD from DATE-OBS or folder)
+  frames     Int         @default(0)
+  seconds    Float       @default(0)
+  bytes      Float       @default(0)
+  path       String
+  scannedAt  DateTime    @default(now())
+
+  @@index([targetId])
+}
+
+model Job {
+  id          String   @id @default(cuid())
+  key         String   @unique // 'weather', 'fits-scan', ...
+  name        String
+  schedule    String // cron expr
+  enabled     Boolean  @default(true)
+  lastRunAt   DateTime?
+  lastStatus  String? // 'ok' | 'error'
+  lastMessage String?
+  runs        JobRun[]
+}
+
+model JobRun {
+  id         String   @id @default(cuid())
+  jobId      String
+  job        Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  startedAt  DateTime @default(now())
+  finishedAt DateTime?
+  status     String // 'running' | 'ok' | 'error'
+  message    String?
+
+  @@index([jobId, startedAt])
+}
+
+model Setting {
+  key   String @id
+  value String
+}
+
+model Report {
+  id          String   @id @default(cuid())
+  type        String // 'space-news', 'morning-briefing', ...
+  title       String
+  content     String // markdown
+  source      String // 'internal' | 'external'
+  model       String?
+  generatedAt DateTime
+  createdAt   DateTime @default(now())
+
+  @@index([type, generatedAt])
+}

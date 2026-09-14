@@ -1,0 +1,315 @@
+---
+agent: devin-local
+session: narrow-galley
+created: 2026-09-08T16:23:01Z
+---
+# Personal Command Center Dashboard
+
+A personal command-center web app that unifies astrophotography planning, calendar, tasks, and AI into one fast homepage, designed to run on a dedicated always-on server and be accessed from any device via Tailscale.
+
+## Summary
+
+A personal command-center web app that unifies astrophotography planning, calendar, tasks, and AI into one fast homepage, designed to run on a dedicated always-on server and be accessed from any device via Tailscale.
+
+## Context: What You Already Have
+
+This dashboard is NOT built from scratch. It ties together existing projects:
+
+- **PersonalWebsite** (`~/PycharmProjects/PersonalWebsite`) — Next.js 16 / React 19 / Tailwind 4 / next-auth. Already has an `/admin` route with Google OAuth and an `/astrophotography` gallery driven by `src/data/dsoData.ts` (structured DSO entries with title, date, type, constellation, telescope, exposure, location, catalogues). This is the stack template to copy.
+- **LocalImageTool / Photo-AI** (`Gonhog-Creator/LocalImageTool`, private) — Self-hosted local AI photo/video indexer. Targets Windows + RTX 4070 + Docker + Immich. Has idempotent scanning, stage-based processing state, read-only media mounts. Roadmap already plans a "public website export mode" that produces static metadata for PersonalWebsite. THIS is the photo server for the always-on PC.
+- **SeeStar-AstroStat-2.0** (`Gonhog-Creator/SeeStar-AstroStat-2.0`, public fork) — PowerShell utility that recursively scans `.fit`/`.fits` files, groups by object/session, calculates total frames + exposure time + storage size. The exact logic the dashboard's FITS scanner needs (to be ported to TS/Python).
+- **SecondBrain** (`~/PycharmProjects/SecondBrain`) — Obsidian-based knowledge base with an AI-maintained wiki (CASCADE.md schema). Could be surfaced inside the dashboard later.
+- **Other repos**: DeltaDash, EvolutionSim, RoADashboard, SplatStudio, DeltaVOdooMiddleware, DeltaVision, BudgetTool, TauEncoder, GaussianTool.
+
+## Key Decisions (from Q&A)
+
+| Decision | Choice | Implication |
+|---|---|---|
+| Deployment | **Server + thin clients** via Tailscale | State lives on the dedicated always-on PC. MacBook/PC/phone are just browsers. Works even when MacBook is off. |
+| Project structure | **New separate repo** (`Dashboard`) | Keeps public website separate from private command center. Different security, different deploy. |
+| Astro data | **API-driven + FITS scan** | Weather API for conditions; scan FITS headers to detect what you imaged. No manual target logging. |
+| Website sync | **Defer** (flag-only for now) | Dashboard lists "final images not yet on website". Auto-publish + agent commit comes later. |
+| Calendar | **Google + Apple** | Google via OAuth API; Apple via local CalDAV / Calendar.app data on the server. |
+| Auth | **Tailscale + (TBD)** | Tailscale is the primary boundary. A lightweight login may be added since you want access from any device/network, not just Tailnet. |
+| AI layer | **Both chat + scheduled jobs** | Context-aware chat (knows your todos/calendar/astro) AND scheduled background AI reports. |
+| OpenAI automations | **Plan for both** | Dashboard can run its own scheduled AI jobs AND ingest reports from external automations. |
+| Background work | **Cron now, agent loops later** | MVP = a jobs panel with scheduled scripts/HTTP calls. Long-running agent loops plug in later as another job type. |
+| Local LLM | **Defer** | Use OpenAI now. Ollama/local model support added later once you decide on multi-agent orchestration. |
+| MVP slice | **Skeleton + astro planner + calendar/tasks** | Deliver the shell, the astro planner end-to-end, AND the calendar+tasks. AI layer is phase 2. |
+| Layout | **Fixed CSS grid** (MVP) | No drag-drop lib yet; SSR-safe and fast. Revisit react-grid-layout in Phase 2/3. |
+| Theme | **Dark-first** | True greys, elevation via lightness steps, one accent. tweakcn-generated palette. Light mode later. |
+| Space news | **Deferred** | Daily AI report widget designed (see dashboard-research.md §7) but not in MVP build — user will figure out the ChatGPT connection later. `Report` table + ingest endpoint design preserved for when it's picked up. |
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  DEDICATED ALWAYS-ON PC  (Windows, RTX 4070)                │
+│                                                             │
+│  ┌───────────────────────────────────────────────────────┐  │
+│  │  Dashboard (Next.js app)  ← what this plan builds      │  │
+│  │  - Next.js 16 / React 19 / Tailwind 4                 │  │
+│  │  - API routes (server-side, full FS access)           │  │
+│  │  - SQLite (via Prisma) for todos, jobs, astro state   │  │
+│  │  - Runs on localhost:3000, exposed via Tailscale      │  │
+│  └───────────────┬───────────────────────────────────────┘  │
+│                  │ talks to                                 │
+│  ┌───────────────▼───────────────────────────────────────┐  │
+│  │  Photo-AI (LocalImageTool)  ← already built           │  │
+│  │  - Immich + AI indexing on RTX 4070                   │  │
+│  │  - Indexes ~4TB photos + FITS                         │  │
+│  │  - Dashboard queries its DB/API for "new images"      │  │
+│  └───────────────┬───────────────────────────────────────┘  │
+│                  │ reads                                    │
+│  ┌───────────────▼───────────────────────────────────────┐  │
+│  │  Storage (D:\Photography, F:\Archive, NAS later)       │  │
+│  │  - FITS files, RAW, final images                       │  │
+│  └───────────────────────────────────────────────────────┘  │
+│                                                             │
+│  ┌───────────────────────────────────────────────────────┐  │
+│  │  Job Runner (built into Dashboard API)                │  │
+│  │  - node-cron scheduler                               │  │
+│  │  - Runs: FITS scan, weather fetch, AI reports        │  │
+│  │  - Phase 2: long-running agent loops plug in here     │  │
+│  └───────────────────────────────────────────────────────┘  │
+└─────────────────────────┬───────────────────────────────────┘
+                          │ Tailscale (HTTPS)
+┌─────────────────────────▼───────────────────────────────────┐
+│  THIN CLIENTS (browser only)                                 │
+│  - MacBook (any network)  - PC  - Phone                     │
+│  - Set as browser homepage / new-tab page                   │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Why this shape:**
+- The server is the single source of truth. If your MacBook is off, the dashboard still runs, jobs still fire, FITS still get scanned.
+- Thin clients = zero install on MacBook/phone. Just a URL.
+- Tailscale gives you HTTPS + auth + access from any network, not just home.
+- Photo-AI already lives on this PC and already indexes the FITS — the dashboard just queries it rather than duplicating that work.
+
+## Tech Stack
+
+| Layer | Choice | Why |
+|---|---|---|
+| Framework | **Next.js 16** (App Router) | Matches PersonalWebsite — familiar, server actions + API routes give FS access |
+| UI | **React 19 + Tailwind 4 + shadcn/ui** | Matches PersonalWebsite; shadcn for fast dashboard widgets |
+| Language | **TypeScript** | Matches PersonalWebsite |
+| Database | **SQLite via Prisma** | Single-file, lives on server, no DB server to run, easy backup. Good enough for one user. |
+| Auth | **next-auth (Google OAuth)** + Tailscale boundary | Reuse PersonalWebsite's pattern. Tailscale gates network access. |
+| Scheduler | **node-cron** (in-process) | Simplest possible. Jobs run inside the Next server. Phase 2 can swap for a real queue. |
+| Weather API | **Open-Meteo** (free, no key) | Cloud cover, transparency, seeing forecasts. Free tier is generous. |
+| Astro targets | **astronomy-engine** (npm) | Pure JS, no deps. Computes object positions/visibility from lat/lon/time. |
+| FITS parsing | **`fitsjs` / `astrofits` / port SeeStar logic to TS** | Read FITS headers (OBJECT, DATE-OBS, EXPTIME, IMAGETYP) in Node |
+| Calendar | **Google Calendar API** + **node-caldav-client** (Apple) | Google via OAuth (reuse next-auth google). Apple via CalDAV to iCloud. |
+| AI (phase 2) | **OpenAI SDK** behind a provider interface | Provider interface lets Ollama swap in later without touching call sites. |
+| Deployment | **PM2** or **`next start`** as a Windows service | Keeps it running 24/7 on the server. Tailscale Serve exposes it as HTTPS. |
+
+## MVP Scope (Phase 1)
+
+The MVP delivers three things, all running on the server:
+
+### 1. Dashboard Shell
+- Single-page layout with a sidebar / top nav of widgets
+- Set as browser homepage; loads fast (SSR, minimal JS)
+- Sections: Astro Planner, Calendar, Tasks, System (later), Jobs (later)
+- Reuse PersonalWebsite's next-auth Google login + Tailwind theme
+
+### 2. Astrophotography Planner (the headline feature)
+- **Tonight panel**: cloud cover, transparency, seeing, moon phase for your location (Bald Head Island, NC per your dsoData) via Open-Meteo
+- **Target suggestions**: list of DSOs visible tonight from your lat/lon, sorted by altitude/transit time, using astronomy-engine + a built-in target catalog (start with the Messier + your existing dsoData entries)
+- **FITS scan**: recursively scan a configurable path (e.g. `D:\Astrophotography`), parse FITS headers, group by OBJECT + session, show total frames/exposure per target. Port SeeStar-AstroStat logic to TS.
+- **"Needs update" list**: compares FITS-scanned final images against what's published in PersonalWebsite's `dsoData.ts` and flags targets you've imaged but not yet published. (Flag only — no auto-publish in MVP.)
+- **Astro todo list**: a dedicated task list for astro prep (e.g. "charge battery", "polar align", "update target list")
+
+### 3. Calendar + Tasks
+- **Unified calendar**: merge Google Calendar (OAuth) + Apple Calendar (CalDAV to iCloud) into one agenda view
+- **Task manager**: todos with projects, due dates, priorities. Stored in SQLite. Replaces whatever you use now.
+- **Today view**: the homepage shows today's events + due tasks + tonight's astro conditions in one glance
+
+## Implementation Steps (Phase 1 — MVP)
+
+### Step 1: Scaffold the repo
+- Create `~/PycharmProjects/Dashboard` as a new git repo
+- `npx create-next-app@latest` with TypeScript, Tailwind, App Router (mirror PersonalWebsite's config)
+- Install: `prisma`, `@prisma/client`, `next-auth`, `astronomy-engine`, `node-cron`, `shadcn/ui` CLI
+- Copy from PersonalWebsite: `tailwind.config.js`, `postcss.config.mjs`, `tsconfig.json`, next-auth config pattern, `.eslintrc.json`
+- Create GitHub repo `Gonhog-Creator/Dashboard` (private) and push
+
+### Step 2: Database + Auth
+- `npx prisma init` with SQLite provider → `prisma/dev.db`
+- Define schema: `Task`, `Project`, `AstroSession`, `AstroTarget`, `Job`, `JobRun`, `Setting`
+- Wire next-auth with Google provider (copy PersonalWebsite's `src/app/api/auth/[...nextauth]` pattern)
+- Add a simple middleware that redirects unauthenticated users to login (Tailscale is the network gate; this is the app gate)
+
+### Step 3: Dashboard shell + layout
+- `src/app/layout.tsx` — root layout with auth provider, theme
+- `src/app/page.tsx` — the homepage "Today" view (grid of widgets)
+- `src/components/layout/Sidebar.tsx` — nav between sections
+- `src/components/layout/Widget.tsx` — reusable card/container for widgets
+- Sections (routes): `/astro`, `/calendar`, `/tasks`, `/jobs` (stub for now)
+
+### Step 4: Task manager
+- `src/app/api/tasks/route.ts` — CRUD (GET list, POST create, PATCH update, DELETE)
+- `src/app/api/tasks/[id]/route.ts` — single task ops
+- `src/components/tasks/TaskList.tsx`, `TaskItem.tsx`, `TaskForm.tsx`
+- `src/app/tasks/page.tsx` — full task view with project filters
+- Reuse on homepage as a "Due today" widget
+
+### Step 5: Calendar integration
+- Google: add `googleapis` npm dep, use next-auth Google token to call Calendar API
+- `src/lib/calendar/google.ts` — fetch events for a date range
+- `src/lib/calendar/apple.ts` — CalDAV client to iCloud (use `ts-caldav` or raw fetch)
+- `src/lib/calendar/merge.ts` — merge both into a unified event list, sort by time
+- `src/app/api/calendar/route.ts` — GET returns merged events
+- `src/components/calendar/AgendaView.tsx` — today + week view
+- Reuse on homepage as "Today's events" widget
+
+### Step 6: Astro — weather panel
+- `src/lib/astro/location.ts` — your fixed observing location (Bald Head Island, NC: lat 33.87, lon -78.00)
+- `src/lib/astro/weather.ts` — Open-Meteo API call for cloud cover, transparency, seeing, moon phase
+- `src/app/api/astro/weather/route.ts` — GET returns tonight's conditions
+- `src/components/astro/TonightPanel.tsx` — visual conditions card
+- Cache weather fetch (job runs every 30 min, stores in DB; API reads from DB)
+
+### Step 7: Astro — target suggestions
+- `src/lib/astro/catalog.ts` — Messier list + your existing `dsoData.ts` entries as a target catalog (name, RA, Dec, type, magnitude)
+- `src/lib/astro/visibility.ts` — use `astronomy-engine` to compute altitude/transit for each target at your location + tonight
+- `src/app/api/astro/targets/route.ts` — GET returns visible targets sorted by max altitude
+- `src/components/astro/TargetList.tsx` — sortable list with altitude, transit time, moon proximity
+
+### Step 8: Astro — FITS scanner
+- `src/lib/astro/fits.ts` — Node-side FITS header parser (port SeeStar-AstroStat logic: recursive scan, group by OBJECT, sum EXPTIME, count frames)
+- `src/app/api/astro/scan/route.ts` — POST triggers a scan of configured path; GET returns last scan results
+- Store scan results in `AstroSession` + `AstroTarget` tables
+- `src/components/astro/FitsLibrary.tsx` — shows imaged targets, total exposure, frame counts
+
+### Step 9: Astro — "needs update" list
+- `src/lib/astro/websiteSync.ts` — fetch PersonalWebsite's `dsoData.ts` (via raw GitHub API or local clone), extract published target names
+- Compare against FITS-scanned targets → list of imaged-but-not-published
+- `src/app/api/astro/needs-update/route.ts` — GET returns the diff
+- `src/components/astro/NeedsUpdateList.tsx` — flags with a one-click "mark as published" (manual)
+
+### Step 10: Job runner
+- `src/lib/jobs/scheduler.ts` — node-cron wrapper, registers jobs on server start
+- `src/lib/jobs/weatherJob.ts` — every 30 min, fetch + cache weather
+- `src/lib/jobs/fitsScanJob.ts` — every hour, scan FITS path for new files
+- `src/app/api/jobs/route.ts` — GET list jobs + last run status; POST trigger a job manually
+- `src/components/jobs/JobPanel.tsx` — shows job status, last run, manual trigger button
+
+### Step 11: Homepage "Today" view
+- `src/app/page.tsx` — compose: Tonight's weather + visible targets + today's calendar + due tasks + needs-update count
+- Fast SSR; client components only where interactivity is needed
+- This is what you set as your browser homepage
+
+### Step 12: Settings + config
+- `src/app/settings/page.tsx` — configure FITS scan path, observing location, calendar providers, job schedules
+- Stored in `Setting` table
+- `.env` for secrets (Google client ID/secret, OpenAI key later, CalDAV creds)
+
+### Step 13: Deploy on the server
+- Clone repo to the always-on PC
+- `npm run build && npm start` (or PM2: `pm2 start npm --name dashboard -- start`)
+- `tailscale serve https://localhost:3000` → exposes as `https://dashboard.<tailnet>.ts.net`
+- Set this URL as browser homepage on MacBook, PC, phone
+
+## Files to Create
+
+```
+Dashboard/
+├── prisma/
+│   └── schema.prisma
+├── src/
+│   ├── app/
+│   │   ├── api/
+│   │   │   ├── auth/[...nextauth]/route.ts
+│   │   │   ├── tasks/route.ts
+│   │   │   ├── tasks/[id]/route.ts
+│   │   │   ├── calendar/route.ts
+│   │   │   ├── astro/weather/route.ts
+│   │   │   ├── astro/targets/route.ts
+│   │   │   ├── astro/scan/route.ts
+│   │   │   ├── astro/needs-update/route.ts
+│   │   │   └── jobs/route.ts
+│   │   ├── astro/page.tsx
+│   │   ├── calendar/page.tsx
+│   │   ├── tasks/page.tsx
+│   │   ├── jobs/page.tsx
+│   │   ├── settings/page.tsx
+│   │   ├── layout.tsx
+│   │   └── page.tsx              ← Today homepage
+│   ├── components/
+│   │   ├── layout/{Sidebar,Widget}.tsx
+│   │   ├── tasks/{TaskList,TaskItem,TaskForm}.tsx
+│   │   ├── calendar/AgendaView.tsx
+│   │   ├── astro/{TonightPanel,TargetList,FitsLibrary,NeedsUpdateList}.tsx
+│   │   └── jobs/JobPanel.tsx
+│   ├── lib/
+│   │   ├── db.ts                 ← Prisma client
+│   │   ├── auth.ts               ← next-auth config
+│   │   ├── calendar/{google,apple,merge}.ts
+│   │   ├── astro/{location,weather,catalog,visibility,fits,websiteSync}.ts
+│   │   └── jobs/{scheduler,weatherJob,fitsScanJob}.ts
+│   └── types/index.ts
+├── .env.local
+├── package.json
+├── tailwind.config.js
+├── tsconfig.json
+└── next.config.js
+```
+
+## Phase 2 — AI Layer (after MVP works)
+
+- **Provider interface**: `src/lib/ai/provider.ts` with `chat()` and `complete()` methods. OpenAI impl first.
+- **Context-aware chat**: `/chat` route that injects your todos, calendar, astro data as system context
+- **Scheduled AI reports**: a job type that calls the AI provider on a schedule (e.g. "morning briefing at 6am") and stores the result in a `Report` table, displayed in the dashboard
+- **External report ingestion**: an endpoint that accepts reports from external OpenAI automations (webhook) and stores them alongside internal reports
+- **Ollama provider**: implement the same interface against a local Ollama instance when you set one up
+
+## Phase 3 — System Monitor + Quick-Launch
+
+- **System widget**: CPU/RAM/disk/network via `osmonitor` or shell calls (server-side)
+- **Process list**: top processes hogging resources
+- **Quick-launch panel**: buttons that run configured scripts/commands on the server (e.g. "open Stellarium", "start SeeStar session", "run Photo-AI sync")
+- **Photo-AI integration**: query LocalImageTool's DB/API for sync status, new images, indexing progress
+
+## Phase 4 — Multi-Agent Orchestration
+
+- **Agent loop job type**: extends the job runner to support long-running agent processes (not just cron scripts)
+- **Agent management UI**: start/stop/pause agents, view their conversation log, inject messages
+- **Local LLM**: swap Ollama in as the AI provider for agents that run continuously (cost control)
+- **Website auto-publish**: an agent that takes a flagged final image, generates a `dsoData.ts` entry + page, commits to PersonalWebsite, opens a PR for your review
+
+## Verification
+
+- [ ] `npm run build` passes with no type errors
+- [ ] `npm run lint` passes
+- [ ] Homepage loads in under 500ms on localhost (SSR)
+- [ ] Tasks CRUD works end-to-end (create, edit, complete, delete)
+- [ ] Google Calendar events appear in the agenda view
+- [ ] Apple Calendar events appear in the agenda view (CalDAV)
+- [ ] Weather panel shows tonight's cloud cover + seeing for Bald Head Island
+- [ ] Target list shows at least 10 visible DSOs sorted by altitude
+- [ ] FITS scanner finds and groups `.fits` files in a test directory
+- [ ] "Needs update" list correctly diffs scanned vs published targets
+- [ ] Job runner executes weather + FITS jobs on schedule
+- [ ] Dashboard accessible via Tailscale URL from MacBook and phone
+- [ ] Login gate works (unauthenticated → login page)
+
+## Risks / Considerations
+
+- **FITS parsing in Node**: no mature pure-JS FITS library. May need to port SeeStar's PowerShell logic to TS, or shell out to Python (`astropy.io.fits`) via child_process. Python subprocess is the safer bet for correctness.
+- **Apple Calendar via CalDAV**: iCloud CalDAV requires app-specific passwords (2FA). Document this in setup. Alternatively, read the local `~/Library/Calendars` DB if the server is a Mac — but your server is Windows, so CalDAV to iCloud is the path.
+- **Tailscale Serve on Windows**: Tailscale Serve works on Windows but is less battle-tested than Linux. If issues arise, run the dashboard in WSL2 on the server instead.
+- **SQLite concurrency**: fine for one user, but the job runner writing while the UI reads could lock. Prisma handles this; use WAL mode (`journal_mode = WAL` in Prisma connection).
+- **Photo-AI coupling**: the dashboard depends on LocalImageTool's API/DB shape. If that's not stable yet, build the FITS scanner standalone first and integrate with Photo-AI later.
+- **Scope creep**: this is a big plan. The MVP (Phase 1) is already substantial. Resist adding AI/system-monitor/agents until Phase 1 is solid and you're actually using it daily.
+- **Security**: the dashboard has FS access and can run commands on your server. Tailscale gates the network, but if a Tailnet device is compromised, the dashboard is a powerful attack surface. The next-auth login is the second gate. Don't skip it.
+- **Single-user assumption**: SQLite + in-process cron assumes one user. If this ever becomes multi-user, the scheduler and DB need rethinking. Fine for now.
+
+## Open Questions (to resolve before/during implementation)
+
+1. **FITS path**: what's the exact path on the server where FITS files live? (e.g. `D:\Astrophotography`) — needed for the scanner config.
+2. **CalDAV creds**: do you have an iCloud app-specific password, or do we need to set one up?
+3. **PersonalWebsite access for "needs update"**: fetch `dsoData.ts` via GitHub raw API (simple, read-only) or clone the repo locally on the server (faster, can diff in detail)? Recommend GitHub raw API for MVP.
+4. **Server OS**: confirmed Windows + WSL2 + RTX 4070 (per Photo-AI roadmap). Should the dashboard run in Windows Node or WSL2 Node? WSL2 is more reliable for Tailscale Serve + cron-like scheduling.
+5. **Observing location**: confirmed Bald Head Island, NC (lat 33.87, lon -78.00) from your dsoData. Is this still your primary site, or do you image from multiple locations?
