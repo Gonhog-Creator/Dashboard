@@ -215,7 +215,15 @@ interface TargetAccum {
   totalSeconds: number;
   totalBytes: number;
   sessions: { date: string; frames: number; seconds: number; bytes: number; path: string }[];
-  filters: Map<string, { frames: number; seconds: number; exptimes: Map<number, number> }>;
+  filters: Map<
+    string,
+    {
+      frames: number;
+      seconds: number;
+      exptimes: Map<number, number>;
+      dates: Map<string, { frames: number; seconds: number }>;
+    }
+  >;
   lastImagedAt: string | null;
 }
 
@@ -296,7 +304,6 @@ export async function scanFitsLibrary(root: string): Promise<FitsScanResult> {
   // Per-file cache: unchanged files (same mtime+size) skip header parsing.
   const cache = await loadFileCache(root);
   const seen = new Map<string, FitsFileEntry>();
-  let parsed = 0;
 
   let next = 0;
   async function worker() {
@@ -308,7 +315,6 @@ export async function scanFitsLibrary(root: string): Promise<FitsScanResult> {
       let entry = cache.get(file);
       if (!entry || entry.mtimeMs !== stat.mtimeMs || entry.size !== stat.size) {
         const header = await parseFitsHeader(file);
-        parsed++;
         entry = {
           mtimeMs: stat.mtimeMs,
           size: stat.size,
@@ -367,12 +373,16 @@ export async function scanFitsLibrary(root: string): Promise<FitsScanResult> {
       const filterName = entry.filter?.trim() || "OSC";
       let f = t.filters.get(filterName);
       if (!f) {
-        f = { frames: 0, seconds: 0, exptimes: new Map() };
+        f = { frames: 0, seconds: 0, exptimes: new Map(), dates: new Map() };
         t.filters.set(filterName, f);
       }
       f.frames++;
       f.seconds += seconds;
       if (seconds > 0) f.exptimes.set(seconds, (f.exptimes.get(seconds) ?? 0) + 1);
+      const fd = f.dates.get(date) ?? { frames: 0, seconds: 0 };
+      fd.frames++;
+      fd.seconds += seconds;
+      f.dates.set(date, fd);
 
       let s = t.sessions.find(
         (x) => x.date === date && x.path === path.dirname(file)
@@ -452,6 +462,9 @@ export async function scanFitsLibrary(root: string): Promise<FitsScanResult> {
           frames: f.frames,
           seconds: f.seconds,
           subSeconds: modalExptime(f.exptimes),
+          dates: [...f.dates.entries()]
+            .map(([date, d]) => ({ date, frames: d.frames, seconds: d.seconds }))
+            .sort((a, b) => a.date.localeCompare(b.date)),
         }))
         .sort((a, b) => b.seconds - a.seconds),
       finals: (finalsByTarget.get(key) ?? []).sort(),

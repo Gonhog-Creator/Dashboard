@@ -1,32 +1,24 @@
-import { fetchCalendarList } from "@/lib/calendar/google";
+import { WeekView } from "@/components/calendar/WeekView";
 
 export const dynamic = "force-dynamic";
 
-export default async function CalendarPage() {
-  const calendars = await fetchCalendarList().catch(() => []);
+function isoDate(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
 
-  // Build the embed URL with every calendar merged in.
-  // The iframe renders the signed-in Google user's view — no rebuild needed.
-  const params = new URLSearchParams({
-    mode: "WEEK",
-    showPrint: "0",
-    showCalendars: "0",
-    showTz: "0",
-    ctz: Intl.DateTimeFormat().resolvedOptions().timeZone,
-  });
-  for (const c of calendars) params.append("src", c.id);
-
-  const embedUrl =
-    calendars.length > 0
-      ? `https://calendar.google.com/calendar/embed?${params}`
-      : "https://calendar.google.com/calendar/embed";
+export default function CalendarPage() {
+  const now = new Date();
+  const weekStart = new Date(now);
+  weekStart.setDate(now.getDate() - now.getDay()); // Sunday
+  weekStart.setHours(0, 0, 0, 0);
 
   return (
-    <iframe
-      src={embedUrl}
-      className="w-full h-[calc(100vh-3rem)] rounded-lg border border-border"
-      style={{ border: 0 }}
-      title="Google Calendar"
-    />
+    <div className="flex flex-col gap-4">
+      <h1 className="text-xl font-semibold">Calendar</h1>
+      <WeekView weekStart={isoDate(weekStart)} nowIso={now.toISOString()} />
+    </div>
   );
 }

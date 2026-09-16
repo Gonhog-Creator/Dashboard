@@ -70,11 +70,18 @@ export interface FitsScanResult {
   errors: string[];
 }
 
+export interface FilterDateBreakdown {
+  date: string; // YYYY-MM-DD
+  frames: number;
+  seconds: number;
+}
+
 export interface FilterBreakdown {
   filter: string; // FILTER header value, or "OSC" when none recorded
   frames: number;
   seconds: number;
   subSeconds: number | null; // modal sub-exposure for this filter
+  dates?: FilterDateBreakdown[]; // per-date subs; absent on pre-change scans
 }
 
 export interface FitsTargetSummary {

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Sidebar } from "@/components/layout/Sidebar";
+import { CommandPalette } from "@/components/CommandPalette";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
@@ -32,6 +33,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
             <Sidebar />
             <main className="flex-1 min-w-0 px-4 py-6 md:px-6">{children}</main>
           </div>
+          <CommandPalette />
           <Toaster />
         </TooltipProvider>
       </body>

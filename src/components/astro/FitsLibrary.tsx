@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -18,9 +18,17 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { RefreshCw, Star } from "lucide-react";
+import {
+  ArrowUpRight,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  RefreshCw,
+  Star,
+} from "lucide-react";
 import { toast } from "sonner";
 import type { LibraryTarget } from "@/types";
+import { cn } from "@/lib/utils";
 
 const MIN_SECONDS = 3600; // hide targets under 1h of integration
 
@@ -40,6 +48,31 @@ function fmtSubs(seconds: number | null) {
 function imgSrc(rel: string, w?: number) {
   const p = `path=${encodeURIComponent(rel)}`;
   return `/api/astro/image?${p}${w ? `&w=${w}` : ""}`;
+}
+
+/** "2026-03-03" -> "Mar 3, 2026" (noon anchor avoids TZ day-shift). */
+function fmtDate(date: string) {
+  return new Date(`${date}T12:00:00`).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+/** Frosted bottom-right button that opens the full-res image in a new tab. */
+function OpenFullLink({ rel }: { rel: string }) {
+  return (
+    <a
+      href={imgSrc(rel)}
+      target="_blank"
+      rel="noopener noreferrer"
+      title="Open full image"
+      onClick={(e) => e.stopPropagation()}
+      className="absolute bottom-1.5 right-1.5 rounded-full bg-background/70 p-1.5 text-muted-foreground backdrop-blur transition hover:text-foreground"
+    >
+      <ArrowUpRight className="size-3.5" />
+    </a>
+  );
 }
 
 export function FitsLibrary() {
@@ -181,6 +214,8 @@ function TargetDetail({
 }) {
   const [cover, setCover] = useState<string | null>(target?.cover ?? null);
   const [saving, setSaving] = useState<string | null>(null);
+  const [viewerIdx, setViewerIdx] = useState<number | null>(null);
+  const [expandedFilter, setExpandedFilter] = useState<string | null>(null);
 
   async function pickCover(rel: string) {
     if (!target || saving) return;
@@ -223,32 +258,37 @@ function TargetDetail({
             </DialogHeader>
 
             {featured && (
-              <a
-                href={imgSrc(featured)}
-                target="_blank"
-                rel="noopener noreferrer"
-                title={featured.split(/[\\/]/).pop()}
-              >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={imgSrc(featured, 1400)}
-                  alt={featured}
-                  className="max-h-[50vh] w-full rounded-md object-contain bg-muted"
-                />
-              </a>
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setViewerIdx(Math.max(0, target.finals.indexOf(featured)))
+                  }
+                  title={featured.split(/[\\/]/).pop()}
+                  className="block w-full cursor-zoom-in"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={imgSrc(featured, 1400)}
+                    alt={featured}
+                    className="max-h-[50vh] w-full rounded-md object-contain bg-muted"
+                  />
+                </button>
+                <OpenFullLink rel={featured} />
+              </div>
             )}
 
             {target.finals.length > 0 ? (
               <div className="grid grid-cols-3 gap-2">
-                {target.finals.map((f) => {
+                {target.finals.map((f, i) => {
                   const isCover = f === featured;
                   return (
                     <div key={f} className="group relative">
-                      <a
-                        href={imgSrc(f)}
-                        target="_blank"
-                        rel="noopener noreferrer"
+                      <button
+                        type="button"
+                        onClick={() => setViewerIdx(i)}
                         title={f.split(/[\\/]/).pop()}
+                        className="block w-full cursor-zoom-in"
                       >
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
@@ -259,7 +299,8 @@ function TargetDetail({
                           }`}
                           loading="lazy"
                         />
-                      </a>
+                      </button>
+                      <OpenFullLink rel={f} />
                       <button
                         type="button"
                         onClick={() => pickCover(f)}
@@ -307,20 +348,73 @@ function TargetDetail({
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {target.filters.map((f) => (
-                      <TableRow key={f.filter}>
-                        <TableCell>{f.filter}</TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {f.frames}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {fmtSubs(f.subSeconds)}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {fmtHours(f.seconds)}h
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                    {target.filters.map((f) => {
+                      const open = expandedFilter === f.filter;
+                      return (
+                        <Fragment key={f.filter}>
+                          <TableRow
+                            className="cursor-pointer"
+                            onClick={() =>
+                              setExpandedFilter(open ? null : f.filter)
+                            }
+                          >
+                            <TableCell>
+                              <span className="flex items-center gap-1">
+                                <ChevronDown
+                                  className={cn(
+                                    "size-3.5 text-muted-foreground transition-transform",
+                                    open && "rotate-180"
+                                  )}
+                                />
+                                {f.filter}
+                              </span>
+                            </TableCell>
+                            <TableCell className="text-right tabular-nums">
+                              {f.frames}
+                            </TableCell>
+                            <TableCell className="text-right tabular-nums">
+                              {fmtSubs(f.subSeconds)}
+                            </TableCell>
+                            <TableCell className="text-right tabular-nums">
+                              {fmtHours(f.seconds)}h
+                            </TableCell>
+                          </TableRow>
+                          {open && (
+                            <TableRow className="hover:bg-transparent">
+                              <TableCell
+                                colSpan={4}
+                                className="bg-muted/30 py-2"
+                              >
+                                {!f.dates ? (
+                                  <p className="text-xs text-muted-foreground">
+                                    Run a new scan for per-date detail.
+                                  </p>
+                                ) : f.dates.length === 1 ? (
+                                  <p className="text-xs text-muted-foreground">
+                                    All {f.dates[0].frames}× taken on{" "}
+                                    {fmtDate(f.dates[0].date)}
+                                  </p>
+                                ) : (
+                                  <ul className="flex flex-col gap-0.5 text-xs text-muted-foreground">
+                                    {f.dates.map((d) => (
+                                      <li
+                                        key={d.date}
+                                        className="flex justify-between"
+                                      >
+                                        <span>{fmtDate(d.date)}</span>
+                                        <span className="tabular-nums">
+                                          {d.frames}× · {fmtHours(d.seconds)}h
+                                        </span>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                )}
+                              </TableCell>
+                            </TableRow>
+                          )}
+                        </Fragment>
+                      );
+                    })}
                   </TableBody>
                 </Table>
               </div>
@@ -343,7 +437,92 @@ function TargetDetail({
                 </ul>
               </div>
             )}
+
+            <ImageViewer
+              finals={target.finals}
+              index={viewerIdx}
+              onChange={setViewerIdx}
+            />
           </>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** Lightbox for final images — nested Dialog so Esc only closes the viewer. */
+function ImageViewer({
+  finals,
+  index,
+  onChange,
+}: {
+  finals: string[];
+  index: number | null;
+  onChange: (i: number | null) => void;
+}) {
+  const rel = index !== null ? finals[index] : null;
+
+  return (
+    <Dialog
+      open={rel !== null}
+      onOpenChange={(open) => !open && onChange(null)}
+    >
+      <DialogContent className="gap-0 overflow-hidden border-none bg-black/95 p-0 sm:max-w-[92vw]">
+        <DialogHeader className="sr-only">
+          <DialogTitle>
+            {rel ? rel.split(/[\\/]/).pop() : "Image viewer"}
+          </DialogTitle>
+        </DialogHeader>
+        {rel && (
+          <div className="relative">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={imgSrc(rel, 2000)}
+              alt={rel}
+              className="max-h-[82vh] w-full object-contain"
+            />
+
+            {finals.length > 1 && (
+              <>
+                <button
+                  type="button"
+                  onClick={() =>
+                    onChange((index! - 1 + finals.length) % finals.length)
+                  }
+                  title="Previous"
+                  className="absolute left-2 top-1/2 -translate-y-1/2 rounded-full bg-background/60 p-2 text-muted-foreground backdrop-blur transition hover:text-foreground"
+                >
+                  <ChevronLeft className="size-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onChange((index! + 1) % finals.length)}
+                  title="Next"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-background/60 p-2 text-muted-foreground backdrop-blur transition hover:text-foreground"
+                >
+                  <ChevronRight className="size-4" />
+                </button>
+              </>
+            )}
+
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-end justify-between bg-gradient-to-t from-black/70 to-transparent px-3 pb-2.5 pt-10">
+              <span className="truncate text-xs text-white/70">
+                {rel.split(/[\\/]/).pop()}
+                <span className="ml-2 text-white/40">
+                  {index! + 1} / {finals.length}
+                </span>
+              </span>
+              <a
+                href={imgSrc(rel)}
+                target="_blank"
+                rel="noopener noreferrer"
+                title="Open full image"
+                className="pointer-events-auto rounded-full bg-background/70 p-2 text-muted-foreground backdrop-blur transition hover:text-foreground"
+              >
+                <ArrowUpRight className="size-4" />
+              </a>
+            </div>
+          </div>
         )}
       </DialogContent>
     </Dialog>
