@@ -12,6 +12,7 @@ interface JobDef {
 
 const registry = new Map<string, JobDef>();
 const tasks = new Map<string, ReturnType<typeof cron.schedule>>();
+const running = new Set<string>();
 let started = false;
 
 export function registerJob(def: JobDef) {
@@ -21,7 +22,21 @@ export function registerJob(def: JobDef) {
 export async function runJob(key: string): Promise<{ ok: boolean; message: string }> {
   const def = registry.get(key);
   if (!def) return { ok: false, message: `unknown job ${key}` };
+  if (running.has(key))
+    return { ok: false, message: `${key} is already running` };
+  running.add(key);
 
+  try {
+    return await executeJob(key, def);
+  } finally {
+    running.delete(key);
+  }
+}
+
+async function executeJob(
+  key: string,
+  def: JobDef
+): Promise<{ ok: boolean; message: string }> {
   await ensureWal();
   const job = await prisma.job.upsert({
     where: { key },
@@ -66,6 +81,12 @@ export async function startScheduler() {
   if (started) return;
   started = true;
   await ensureWal();
+
+  // Any run still marked "running" at boot is a zombie from a killed process.
+  await prisma.jobRun.updateMany({
+    where: { status: "running" },
+    data: { status: "interrupted", finishedAt: new Date() },
+  });
 
   for (const def of registry.values()) {
     const job = await prisma.job.upsert({

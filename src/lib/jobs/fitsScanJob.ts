@@ -9,23 +9,28 @@ export async function runFitsScan(): Promise<string> {
 
   const result = await scanFitsLibrary(root);
 
+  // Safety: a scan that finds nothing almost always means the drive/path was
+  // unreachable — never wipe existing data on an empty result.
+  if (result.fileCount === 0) {
+    const detail = result.errors.length ? ` — ${result.errors[0]}` : "";
+    return `found 0 light frames under ${root}; kept existing data${detail}`;
+  }
+
   // Persist results into AstroTarget + AstroSession
   for (const t of result.targets) {
+    const detail = {
+      totalFrames: t.frames,
+      totalSeconds: t.totalSeconds,
+      totalBytes: t.totalBytes,
+      lastImagedAt: t.lastImagedAt ? new Date(t.lastImagedAt) : null,
+      aliases: JSON.stringify(t.aliases),
+      filters: JSON.stringify(t.filters),
+      finals: JSON.stringify(t.finals),
+    };
     const target = await prisma.astroTarget.upsert({
       where: { name: t.object },
-      update: {
-        totalFrames: t.frames,
-        totalSeconds: t.totalSeconds,
-        totalBytes: t.totalBytes,
-        lastImagedAt: t.lastImagedAt ? new Date(t.lastImagedAt) : null,
-      },
-      create: {
-        name: t.object,
-        totalFrames: t.frames,
-        totalSeconds: t.totalSeconds,
-        totalBytes: t.totalBytes,
-        lastImagedAt: t.lastImagedAt ? new Date(t.lastImagedAt) : null,
-      },
+      update: detail,
+      create: { name: t.object, ...detail },
     });
 
     // Replace session rows for this target (idempotent rescan)
@@ -36,6 +41,7 @@ export async function runFitsScan(): Promise<string> {
         date: s.date,
         frames: s.frames,
         seconds: s.seconds,
+        bytes: s.bytes,
         path: s.path,
       })),
     });
@@ -47,7 +53,10 @@ export async function runFitsScan(): Promise<string> {
     where: { name: { notIn: [...seen] } },
   });
 
-  return `${result.fileCount} light frames, ${result.targets.length} targets`;
+  const errNote = result.errors.length
+    ? `, ${result.errors.length} unreadable dir(s)`
+    : "";
+  return `${result.fileCount} light frames, ${result.targets.length} targets${errNote}`;
 }
 
 registerJob({

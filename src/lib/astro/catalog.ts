@@ -138,7 +138,7 @@ export const CATALOG: CatalogTarget[] = [
   { name: "NGC 884", aliases: ["Double Cluster chi Persei"], ra: 2.373, dec: 57.117, type: "open", mag: 6.1 },
   { name: "NGC 253", aliases: ["Sculptor Galaxy", "Silver Coin"], ra: 0.792, dec: -25.283, type: "galaxy", mag: 7.1 },
   { name: "IC 1396", aliases: ["Elephant's Trunk region"], ra: 21.652, dec: 57.5, type: "nebula", mag: 3.5 },
-  { name: "NGC 6888", aliases: ["Crescent Nebula"], ra: 20.2, dec: 38.35, type: "nebula", mag: 7.4 },
+  { name: "NGC 6888", aliases: ["Crescent Nebula", "C27", "C 27"], ra: 20.2, dec: 38.35, type: "nebula", mag: 7.4 },
   { name: "NGC 7635", aliases: ["Bubble Nebula"], ra: 23.345, dec: 61.2, type: "nebula", mag: 10.0 },
   { name: "NGC 891", aliases: ["Silver Sliver"], ra: 2.377, dec: 42.35, type: "galaxy", mag: 10.0 },
   { name: "NGC 4565", aliases: ["Needle Galaxy"], ra: 12.605, dec: 25.983, type: "galaxy", mag: 9.6 },
@@ -197,10 +197,46 @@ export const CATALOG: CatalogTarget[] = [
 
 const byName = new Map<string, CatalogTarget>();
 for (const t of CATALOG) {
-  byName.set(t.name.toUpperCase(), t);
-  for (const a of t.aliases) byName.set(a.toUpperCase(), t);
+  byName.set(normalizeKey(t.name), t);
+  for (const a of t.aliases) byName.set(normalizeKey(a), t);
 }
 
+/** Uppercase, strip everything non-alphanumeric: "M 1" -> "M1", "IC 1805" -> "IC1805". */
+function normalizeKey(name: string): string {
+  return name.toUpperCase().replace(/[^A-Z0-9]/g, "");
+}
+
+/** Extract a catalog designator like M31, NGC 224, IC 1805, Sh2-132, C27. */
+export function extractCatalogId(name: string): string | null {
+  const m = /(?:^|[^A-Z0-9])(M|NGC|IC|SH\s*-?\s*2?|C)\s*-?\s*(\d+)/i.exec(name);
+  if (!m) return null;
+  const prefix = m[1].toUpperCase().replace(/[^A-Z0-9]/g, "");
+  return `${prefix}${m[2]}`;
+}
+
+/**
+ * Resolve a raw OBJECT/folder name to a catalog entry.
+ * Tries the full normalized name, then an embedded catalog designator
+ * (so "IC 1805 - Heart Nebula" -> IC 1805).
+ */
 export function findInCatalog(name: string): CatalogTarget | undefined {
-  return byName.get(name.trim().toUpperCase());
+  const direct = byName.get(normalizeKey(name));
+  if (direct) return direct;
+  const id = extractCatalogId(name);
+  return id ? byName.get(id) : undefined;
+}
+
+/** Whole-string catalog designator, e.g. "NGC 224", "M31", "IC 1805", "C27". */
+const DESIGNATOR =
+  /^(M|NGC|IC|SH\s*-?\s*2?|C|LDN|LBN|B|VDB|ARP|PGC)\s*-?\s*\d+[A-Z]?$/i;
+
+/** First alias that isn't a catalog designator — the target's common name. */
+export function commonName(t: CatalogTarget): string | null {
+  return t.aliases.find((a) => !DESIGNATOR.test(a.trim())) ?? null;
+}
+
+/** Common name for any raw/canonical target name, or null when unknown. */
+export function commonNameFor(name: string): string | null {
+  const entry = findInCatalog(name);
+  return entry ? commonName(entry) : null;
 }

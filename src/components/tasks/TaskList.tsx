@@ -40,7 +40,7 @@ export function TaskList({
   }, [filter]);
 
   useEffect(() => {
-    load();
+    queueMicrotask(load);
   }, [load]);
 
   async function toggle(task: TaskItem) {

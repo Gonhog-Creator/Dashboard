@@ -32,7 +32,7 @@ export function NeedsUpdateList() {
   }, []);
 
   useEffect(() => {
-    load();
+    queueMicrotask(load);
   }, [load]);
 
   async function markPublished(id: string) {

@@ -48,7 +48,7 @@ export function JobPanel() {
   }, []);
 
   useEffect(() => {
-    load();
+    queueMicrotask(load);
     const id = setInterval(load, 30_000);
     return () => clearInterval(id);
   }, [load]);

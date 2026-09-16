@@ -11,7 +11,7 @@ const FIELDS: { key: string; label: string; placeholder: string }[] = [
   { key: SETTING_KEYS.observerLat, label: "Latitude", placeholder: "40.7128" },
   { key: SETTING_KEYS.observerLon, label: "Longitude", placeholder: "-74.0060" },
   { key: SETTING_KEYS.observerName, label: "Location name", placeholder: "Backyard" },
-  { key: SETTING_KEYS.fitsScanPath, label: "FITS scan path", placeholder: "D:\\Astro\\Lights" },
+  { key: SETTING_KEYS.fitsScanPath, label: "FITS scan path", placeholder: "F:\\Astrophotography" },
 ];
 
 export function SettingsForm({

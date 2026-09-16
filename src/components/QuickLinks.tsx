@@ -10,6 +10,7 @@ const DEFAULT_LINKS: Link[] = [
   { label: "Photo-AI", url: "http://localhost:8080" },
   { label: "Immich", url: "http://localhost:2283" },
   { label: "PersonalWebsite", url: "https://localhost:3001" },
+  { label: "Google Drive", url: "https://drive.google.com" },
 ];
 
 export async function QuickLinks() {

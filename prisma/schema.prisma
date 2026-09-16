@@ -33,7 +33,10 @@ model Task {
 
 model AstroTarget {
   id           String         @id @default(cuid())
-  name         String         @unique // OBJECT header value, normalized
+  name         String         @unique // canonical name (catalog name when resolvable)
+  aliases      String?        // JSON array of raw OBJECT names merged into this target
+  filters      String?        // JSON array of FilterBreakdown
+  finals       String?        // JSON array of final-image paths relative to scan root
   totalFrames  Int            @default(0)
   totalSeconds Float          @default(0)
   totalBytes   Float          @default(0)

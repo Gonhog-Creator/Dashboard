@@ -1,5 +1,5 @@
 import { Body, Equator, Horizon, type Observer } from "astronomy-engine";
-import { CATALOG } from "./catalog";
+import { CATALOG, commonName } from "./catalog";
 import { darknessWindow } from "./weather";
 import { getAstroObserver } from "./location";
 import type { VisibleTarget } from "@/types";
@@ -42,10 +42,12 @@ export function visibleTonight(
     let transit: Date | null = null;
     let aboveMin = 0;
     let minMoonSep = 180;
+    const track: { t: string; alt: number }[] = [];
 
     for (let ms = dusk.getTime(); ms <= dawn.getTime(); ms += stepMs) {
       const d = new Date(ms);
       const hor = Horizon(d, observer, t.ra, t.dec, "normal");
+      track.push({ t: d.toISOString(), alt: Math.round(hor.altitude * 10) / 10 });
       if (hor.altitude > maxAlt) {
         maxAlt = hor.altitude;
         transit = d;
@@ -69,6 +71,7 @@ export function visibleTonight(
 
     results.push({
       name: t.name,
+      commonName: commonName(t),
       type: t.type,
       magnitude: t.mag,
       ra: t.ra,
@@ -78,6 +81,8 @@ export function visibleTonight(
       moonSeparation: Math.round(minMoonSep),
       hoursAbove30: Math.round(aboveMin * 10) / 10,
       score,
+      imageUrl: null, // filled in by the targets API route
+      track,
     });
   }
 
@@ -87,4 +92,20 @@ export function visibleTonight(
 export async function tonightTargets(limit = 25): Promise<VisibleTarget[]> {
   const { observer } = await getAstroObserver();
   return visibleTonight(observer).slice(0, limit);
+}
+
+/** Moon altitude samples across tonight's darkness window (for chart overlays). */
+export async function moonTrackTonight(): Promise<{ t: string; alt: number }[]> {
+  const { observer } = await getAstroObserver();
+  const { dusk, dawn } = darknessWindow(observer);
+  if (!dusk || !dawn) return [];
+  const stepMs = STEP_MIN * 60 * 1000;
+  const track: { t: string; alt: number }[] = [];
+  for (let ms = dusk.getTime(); ms <= dawn.getTime(); ms += stepMs) {
+    const d = new Date(ms);
+    const eq = Equator(Body.Moon, d, observer, true, true);
+    const hor = Horizon(d, observer, eq.ra, eq.dec, "normal");
+    track.push({ t: d.toISOString(), alt: Math.round(hor.altitude * 10) / 10 });
+  }
+  return track;
 }

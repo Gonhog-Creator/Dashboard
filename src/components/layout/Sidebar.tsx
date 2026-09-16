@@ -5,8 +5,11 @@ import { usePathname } from "next/navigation";
 import {
   Calendar,
   CheckSquare,
+  FileText,
+  GitBranch,
   Home,
   ListTodo,
+  MessageSquare,
   Settings,
   Telescope,
   Timer,
@@ -18,6 +21,9 @@ const NAV = [
   { href: "/astro", label: "Astro", icon: Telescope },
   { href: "/calendar", label: "Calendar", icon: Calendar },
   { href: "/tasks", label: "Tasks", icon: ListTodo },
+  { href: "/chat", label: "Chat", icon: MessageSquare },
+  { href: "/reports", label: "Reports", icon: FileText },
+  { href: "/github", label: "GitHub", icon: GitBranch },
   { href: "/jobs", label: "Jobs", icon: Timer },
   { href: "/settings", label: "Settings", icon: Settings },
 ];

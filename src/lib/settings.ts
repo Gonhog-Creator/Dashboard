@@ -39,13 +39,13 @@ export async function getAllSettings(): Promise<Record<string, string>> {
 /** Observer location: Setting table wins, env vars are the fallback/default. */
 export async function getObserver() {
   const [lat, lon, elev, name] = await Promise.all([
-    getSettingOr(SETTING_KEYS.observerLat, process.env.OBSERVER_LAT ?? "33.87"),
-    getSettingOr(SETTING_KEYS.observerLon, process.env.OBSERVER_LON ?? "-78.00"),
+    getSettingOr(SETTING_KEYS.observerLat, process.env.OBSERVER_LAT ?? "35.9132"),
+    getSettingOr(SETTING_KEYS.observerLon, process.env.OBSERVER_LON ?? "-79.0558"),
     getSettingOr(
       SETTING_KEYS.observerElevation,
-      process.env.OBSERVER_ELEVATION_M ?? "3"
+      process.env.OBSERVER_ELEVATION_M ?? "150"
     ),
-    getSettingOr(SETTING_KEYS.observerName, "Bald Head Island, NC"),
+    getSettingOr(SETTING_KEYS.observerName, "Chapel Hill, NC"),
   ]);
   return {
     lat: parseFloat(lat),
@@ -60,4 +60,23 @@ export async function getFitsScanPath() {
     SETTING_KEYS.fitsScanPath,
     process.env.FITS_SCAN_PATH ?? ""
   );
+}
+
+const COVERS_KEY = "astro.covers";
+
+/** User-chosen cover images: { [canonicalTargetName]: path relative to scan root }. */
+export async function getAstroCovers(): Promise<Record<string, string>> {
+  const raw = await getSetting(COVERS_KEY);
+  if (!raw) return {};
+  try {
+    return JSON.parse(raw) as Record<string, string>;
+  } catch {
+    return {};
+  }
+}
+
+export async function setAstroCover(targetName: string, relPath: string) {
+  const covers = await getAstroCovers();
+  covers[targetName] = relPath;
+  await setSetting(COVERS_KEY, JSON.stringify(covers));
 }

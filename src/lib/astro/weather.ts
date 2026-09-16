@@ -67,6 +67,7 @@ function moonInfo(observer: Observer, at: Date) {
   const idx = Math.floor(((phaseAngle + 22.5) % 360) / 45);
   return {
     phase: Math.round(illum * 100) / 100,
+    angle: Math.round(phaseAngle),
     altitude: Math.round(hor.altitude * 10) / 10,
     name: names[idx],
     ra: eq.ra,
@@ -123,7 +124,7 @@ export function computeVerdict(
   }
 
   score = Math.max(0, Math.min(100, Math.round(score)));
-  const level = score >= 70 ? "GO" : score >= 40 ? "MARGINAL" : "NO-GO";
+  const level = score > 80 ? "GO" : score >= 40 ? "MARGINAL" : "NO-GO";
   return { level, score, reasons };
 }
 
@@ -168,7 +169,12 @@ export async function fetchTonight(): Promise<TonightConditions> {
     dusk: dusk?.toISOString() ?? null,
     dawn: dawn?.toISOString() ?? null,
     darkHours: Math.round(darkHours * 10) / 10,
-    moon: { phase: moon.phase, altitude: moon.altitude, name: moon.name },
+    moon: {
+      phase: moon.phase,
+      angle: moon.angle,
+      altitude: moon.altitude,
+      name: moon.name,
+    },
     hourly,
     verdict,
     fetchedAt: new Date().toISOString(),

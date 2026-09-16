@@ -17,6 +17,7 @@ export interface TonightConditions {
   darkHours: number;
   moon: {
     phase: number; // 0-1 illumination fraction
+    angle: number; // 0-360 phase angle (<180 waxing, >180 waning)
     altitude: number; // deg at midnight
     name: string;
   };
@@ -46,6 +47,7 @@ export interface Verdict {
 
 export interface VisibleTarget {
   name: string;
+  commonName: string | null; // e.g. "Andromeda Galaxy" for M31
   type: string;
   magnitude: number | null;
   constellation?: string;
@@ -56,6 +58,8 @@ export interface VisibleTarget {
   moonSeparation: number; // deg
   hoursAbove30: number; // hours above 30° during darkness
   score: number; // composite ranking
+  imageUrl: string | null; // local final/cover or DSS2 survey cutout
+  track: { t: string; alt: number }[]; // altitude samples dusk→dawn
 }
 
 export interface FitsScanResult {
@@ -66,13 +70,41 @@ export interface FitsScanResult {
   errors: string[];
 }
 
+export interface FilterBreakdown {
+  filter: string; // FILTER header value, or "OSC" when none recorded
+  frames: number;
+  seconds: number;
+  subSeconds: number | null; // modal sub-exposure for this filter
+}
+
 export interface FitsTargetSummary {
-  object: string;
+  object: string; // canonical name (catalog name when resolvable)
+  aliases: string[]; // distinct raw OBJECT names merged into this target
   frames: number;
   totalSeconds: number;
   totalBytes: number;
-  sessions: { date: string; frames: number; seconds: number; path: string }[];
+  sessions: { date: string; frames: number; seconds: number; bytes: number; path: string }[];
+  filters: FilterBreakdown[];
+  finals: string[]; // image paths relative to scan root
   lastImagedAt: string | null;
+}
+
+/** Shape returned by GET /api/astro/scan for the Raw FITS library UI. */
+export interface LibraryTarget {
+  id: string;
+  name: string;
+  commonName: string | null;
+  aliases: string[];
+  scopes: string[]; // derived from session paths, e.g. ["SeeStar", "Askar 80PHQ"]
+  totalFrames: number;
+  totalSeconds: number;
+  totalBytes: number;
+  lastImagedAt: string | null;
+  published: boolean;
+  filters: FilterBreakdown[];
+  finals: string[];
+  cover: string | null; // user-chosen cover image (rel path), else null
+  sessions: { id: string; date: string; frames: number; seconds: number }[];
 }
 
 export interface JobStatus {
@@ -83,4 +115,86 @@ export interface JobStatus {
   lastRunAt: string | null;
   lastStatus: string | null;
   lastMessage: string | null;
+}
+
+export interface GithubUser {
+  login: string;
+  name: string | null;
+  avatarUrl: string;
+  url: string;
+}
+
+export interface ContributionDay {
+  date: string; // YYYY-MM-DD
+  count: number;
+  level: 0 | 1 | 2 | 3 | 4;
+}
+
+export interface ContributionWeek {
+  days: ContributionDay[];
+}
+
+export interface GithubPullRequest {
+  id: number;
+  title: string;
+  repo: string; // owner/name
+  number: number;
+  url: string;
+  createdAt: string;
+  isDraft: boolean;
+}
+
+export interface GithubIssue {
+  id: number;
+  title: string;
+  repo: string;
+  number: number;
+  url: string;
+  createdAt: string;
+}
+
+export interface GithubActivityItem {
+  id: string;
+  text: string;
+  repo: string | null;
+  url: string;
+  createdAt: string;
+}
+
+export interface GithubNotification {
+  id: string;
+  title: string;
+  repo: string;
+  type: string; // PullRequest | Issue | ...
+  url: string;
+  updatedAt: string;
+  unread: boolean;
+}
+
+export interface GithubRepo {
+  name: string;
+  fullName: string;
+  url: string;
+  description: string | null;
+  language: string | null;
+  stars: number;
+  isPrivate: boolean;
+  pushedAt: string;
+}
+
+export interface GithubDashboardData {
+  configured: boolean;
+  user: GithubUser | null;
+  totalContributions: number;
+  currentStreak: number;
+  weeks: ContributionWeek[];
+  myPRs: GithubPullRequest[];
+  reviewRequests: GithubPullRequest[];
+  assignedIssues: GithubIssue[];
+  activity: GithubActivityItem[];
+  notifications: GithubNotification[];
+  notificationsUnsupported?: boolean;
+  recentRepos: GithubRepo[];
+  fetchedAt: string;
+  errors: string[];
 }
