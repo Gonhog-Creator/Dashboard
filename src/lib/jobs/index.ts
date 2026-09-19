@@ -2,5 +2,6 @@
 import "./weatherJob";
 import "./fitsScanJob";
 import "./reportJob";
+import "./scienceNewsJob";
 
 export { startScheduler, runJob, listRegisteredJobs } from "./scheduler";

@@ -21,8 +21,6 @@ import {
 import {
   ArrowUpRight,
   ChevronDown,
-  ChevronLeft,
-  ChevronRight,
   RefreshCw,
   Star,
 } from "lucide-react";
@@ -50,6 +48,13 @@ function imgSrc(rel: string, w?: number) {
   return `/api/astro/image?${p}${w ? `&w=${w}` : ""}`;
 }
 
+/** Hours baked into a filename, e.g. "M31_12.5h_final.jpg" -> 12.5. */
+function hoursFromName(rel: string): number | null {
+  const base = rel.split(/[\\/]/).pop() ?? rel;
+  const m = base.match(/(\d+(?:\.\d+)?)\s*h(?:rs?|ours?)?\b/i);
+  return m ? parseFloat(m[1]) : null;
+}
+
 /** "2026-03-03" -> "Mar 3, 2026" (noon anchor avoids TZ day-shift). */
 function fmtDate(date: string) {
   return new Date(`${date}T12:00:00`).toLocaleDateString(undefined, {
@@ -75,9 +80,16 @@ function OpenFullLink({ rel }: { rel: string }) {
   );
 }
 
-export function FitsLibrary() {
-  const [targets, setTargets] = useState<LibraryTarget[]>([]);
-  const [loading, setLoading] = useState(true);
+export function FitsLibrary({
+  initialTargets,
+}: {
+  /** Server-rendered snapshot — skips the client fetch when provided. */
+  initialTargets?: LibraryTarget[] | null;
+}) {
+  const [targets, setTargets] = useState<LibraryTarget[]>(
+    initialTargets ?? []
+  );
+  const [loading, setLoading] = useState(!initialTargets);
   const [scanning, setScanning] = useState(false);
   const [selected, setSelected] = useState<LibraryTarget | null>(null);
 
@@ -91,8 +103,9 @@ export function FitsLibrary() {
   }, []);
 
   useEffect(() => {
+    if (initialTargets) return; // server already fetched
     queueMicrotask(load);
-  }, [load]);
+  }, [load, initialTargets]);
 
   async function triggerScan() {
     setScanning(true);
@@ -213,8 +226,8 @@ function TargetDetail({
   onCover: (name: string, rel: string) => void;
 }) {
   const [cover, setCover] = useState<string | null>(target?.cover ?? null);
+  const [viewed, setViewed] = useState<string | null>(null);
   const [saving, setSaving] = useState<string | null>(null);
-  const [viewerIdx, setViewerIdx] = useState<number | null>(null);
   const [expandedFilter, setExpandedFilter] = useState<string | null>(null);
 
   async function pickCover(rel: string) {
@@ -236,11 +249,11 @@ function TargetDetail({
     }
   }
 
-  const featured = cover ?? target?.finals[0] ?? null;
+  const featured = viewed ?? cover ?? target?.finals[0] ?? null;
 
   return (
     <Dialog open={target !== null} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-6xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-6xl max-h-[90vh] overflow-y-auto scrollbar-hidden">
         {target && (
           <>
             <DialogHeader>
@@ -259,67 +272,43 @@ function TargetDetail({
 
             {featured && (
               <div className="relative">
-                <button
-                  type="button"
-                  onClick={() =>
-                    setViewerIdx(Math.max(0, target.finals.indexOf(featured)))
-                  }
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={imgSrc(featured, 1400)}
+                  alt={featured}
                   title={featured.split(/[\\/]/).pop()}
-                  className="block w-full cursor-zoom-in"
-                >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={imgSrc(featured, 1400)}
-                    alt={featured}
-                    className="max-h-[50vh] w-full rounded-md object-contain bg-muted"
-                  />
-                </button>
+                  className="max-h-[50vh] w-full rounded-md object-contain bg-muted"
+                />
                 <OpenFullLink rel={featured} />
               </div>
             )}
 
             {target.finals.length > 0 ? (
-              <div className="grid grid-cols-3 gap-2">
-                {target.finals.map((f, i) => {
-                  const isCover = f === featured;
-                  return (
-                    <div key={f} className="group relative">
-                      <button
-                        type="button"
-                        onClick={() => setViewerIdx(i)}
-                        title={f.split(/[\\/]/).pop()}
-                        className="block w-full cursor-zoom-in"
-                      >
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={imgSrc(f, 480)}
-                          alt={f}
-                          className={`h-36 w-full rounded-md object-cover bg-muted ${
-                            isCover ? "ring-2 ring-primary" : ""
-                          }`}
-                          loading="lazy"
-                        />
-                      </button>
-                      <OpenFullLink rel={f} />
-                      <button
-                        type="button"
-                        onClick={() => pickCover(f)}
-                        disabled={saving === f}
-                        title={isCover ? "Cover image" : "Set as cover"}
-                        className={`absolute right-1.5 top-1.5 rounded-full p-1.5 backdrop-blur transition ${
-                          isCover
-                            ? "bg-primary text-primary-foreground"
-                            : "bg-background/70 text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-foreground"
-                        }`}
-                      >
-                        <Star
-                          className="size-3.5"
-                          fill={isCover ? "currentColor" : "none"}
-                        />
-                      </button>
-                    </div>
-                  );
-                })}
+              <div
+                className={
+                  target.finals.length > 3
+                    ? "flex gap-2 overflow-x-auto pb-1 scrollbar-hidden"
+                    : "grid grid-cols-3 gap-2"
+                }
+                onWheel={(e) => {
+                  // Vertical wheel scrolls the filmstrip horizontally.
+                  if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
+                  e.currentTarget.scrollLeft += e.deltaY;
+                  e.preventDefault();
+                }}
+              >
+                {target.finals.map((f) => (
+                  <FinalThumb
+                    key={f}
+                    rel={f}
+                    isViewed={f === featured}
+                    isCover={f === cover}
+                    saving={saving === f}
+                    compact={target.finals.length > 3}
+                    onView={() => setViewed(f)}
+                    onCover={() => pickCover(f)}
+                  />
+                ))}
               </div>
             ) : (
               <p className="text-sm text-muted-foreground">
@@ -332,6 +321,19 @@ function TargetDetail({
               <Stat label="Frames" value={String(target.totalFrames)} />
               <Stat label="Size" value={`${fmtGB(target.totalBytes)}GB`} />
             </div>
+
+            {target.scopeBreakdown.length > 1 && (
+              <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                {target.scopeBreakdown.map((s) => (
+                  <span key={s.scope}>
+                    <span className="font-medium text-foreground">
+                      {s.scope}
+                    </span>{" "}
+                    {fmtHours(s.seconds)}h · {s.frames}×
+                  </span>
+                ))}
+              </div>
+            )}
 
             {target.filters.length > 0 && (
               <div>
@@ -438,11 +440,6 @@ function TargetDetail({
               </div>
             )}
 
-            <ImageViewer
-              finals={target.finals}
-              index={viewerIdx}
-              onChange={setViewerIdx}
-            />
           </>
         )}
       </DialogContent>
@@ -450,82 +447,65 @@ function TargetDetail({
   );
 }
 
-/** Lightbox for final images — nested Dialog so Esc only closes the viewer. */
-function ImageViewer({
-  finals,
-  index,
-  onChange,
+/** One final-image thumbnail; `compact` = fixed-width filmstrip cell. */
+function FinalThumb({
+  rel,
+  isViewed,
+  isCover,
+  saving,
+  compact,
+  onView,
+  onCover,
 }: {
-  finals: string[];
-  index: number | null;
-  onChange: (i: number | null) => void;
+  rel: string;
+  isViewed: boolean;
+  isCover: boolean;
+  saving: boolean;
+  compact: boolean;
+  onView: () => void;
+  onCover: () => void;
 }) {
-  const rel = index !== null ? finals[index] : null;
-
+  const hours = hoursFromName(rel);
   return (
-    <Dialog
-      open={rel !== null}
-      onOpenChange={(open) => !open && onChange(null)}
-    >
-      <DialogContent className="gap-0 overflow-hidden border-none bg-black/95 p-0 sm:max-w-[92vw]">
-        <DialogHeader className="sr-only">
-          <DialogTitle>
-            {rel ? rel.split(/[\\/]/).pop() : "Image viewer"}
-          </DialogTitle>
-        </DialogHeader>
-        {rel && (
-          <div className="relative">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={imgSrc(rel, 2000)}
-              alt={rel}
-              className="max-h-[82vh] w-full object-contain"
-            />
-
-            {finals.length > 1 && (
-              <>
-                <button
-                  type="button"
-                  onClick={() =>
-                    onChange((index! - 1 + finals.length) % finals.length)
-                  }
-                  title="Previous"
-                  className="absolute left-2 top-1/2 -translate-y-1/2 rounded-full bg-background/60 p-2 text-muted-foreground backdrop-blur transition hover:text-foreground"
-                >
-                  <ChevronLeft className="size-4" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onChange((index! + 1) % finals.length)}
-                  title="Next"
-                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-background/60 p-2 text-muted-foreground backdrop-blur transition hover:text-foreground"
-                >
-                  <ChevronRight className="size-4" />
-                </button>
-              </>
-            )}
-
-            <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-end justify-between bg-gradient-to-t from-black/70 to-transparent px-3 pb-2.5 pt-10">
-              <span className="truncate text-xs text-white/70">
-                {rel.split(/[\\/]/).pop()}
-                <span className="ml-2 text-white/40">
-                  {index! + 1} / {finals.length}
-                </span>
-              </span>
-              <a
-                href={imgSrc(rel)}
-                target="_blank"
-                rel="noopener noreferrer"
-                title="Open full image"
-                className="pointer-events-auto rounded-full bg-background/70 p-2 text-muted-foreground backdrop-blur transition hover:text-foreground"
-              >
-                <ArrowUpRight className="size-4" />
-              </a>
-            </div>
-          </div>
-        )}
-      </DialogContent>
-    </Dialog>
+    <div className={cn("group relative", compact && "w-44 shrink-0")}>
+      <button
+        type="button"
+        onClick={onView}
+        title={rel.split(/[\\/]/).pop()}
+        className="block w-full"
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={imgSrc(rel, 480)}
+          alt={rel}
+          className={cn(
+            "w-full rounded-md object-cover bg-muted",
+            compact ? "h-28" : "h-36",
+            isViewed && "ring-2 ring-primary"
+          )}
+          loading="lazy"
+        />
+      </button>
+      {hours !== null && (
+        <span className="absolute bottom-1.5 left-1.5 rounded-full bg-background/70 px-1.5 py-0.5 text-[10px] tabular-nums text-muted-foreground backdrop-blur">
+          {hours}h
+        </span>
+      )}
+      <OpenFullLink rel={rel} />
+      <button
+        type="button"
+        onClick={onCover}
+        disabled={saving}
+        title={isCover ? "Cover image" : "Set as cover"}
+        className={`absolute right-1.5 top-1.5 rounded-full p-1.5 backdrop-blur transition ${
+          isCover
+            ? "bg-primary text-primary-foreground"
+            : "bg-background/70 text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-foreground"
+        }`}
+      >
+        <Star className="size-3.5" fill={isCover ? "currentColor" : "none"} />
+      </button>
+    </div>
   );
 }
 

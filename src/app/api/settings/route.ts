@@ -8,6 +8,9 @@ export async function GET() {
   const settings = await getAllSettings();
   // Never expose secrets through the API
   delete settings["cache.tonight"];
+  for (const key of Object.keys(settings)) {
+    if (key.startsWith("msft.")) delete settings[key];
+  }
   return Response.json(settings);
 }
 

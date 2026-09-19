@@ -122,6 +122,12 @@
 @layer base {
   * {
     @apply border-border outline-ring/50;
+    /* No visible scrollbars anywhere — dark UI, scroll via wheel/drag. */
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    &::-webkit-scrollbar {
+      display: none;
+    }
   }
   body {
     @apply bg-background text-foreground;
@@ -129,4 +135,51 @@
   html {
     @apply font-sans;
   }
+}
+
+/* Scrollable but with no visible scrollbar (all engines). */
+@utility scrollbar-hidden {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* Dashboard grid (react-grid-layout) */
+.react-grid-item.react-grid-placeholder {
+  background: var(--primary) !important;
+  opacity: 0.15;
+  border-radius: var(--radius-xl);
+}
+
+.react-grid-item.tile-editing {
+  cursor: move;
+}
+
+.react-grid-item.tile-editing > * {
+  outline: 1.5px dashed color-mix(in oklch, var(--primary) 55%, transparent);
+  outline-offset: -1.5px;
+}
+
+.react-grid-item > .react-resizable-handle {
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  right: 0;
+  bottom: 0;
+  cursor: se-resize;
+  z-index: 10;
+}
+
+.react-grid-item > .react-resizable-handle::after {
+  content: "";
+  position: absolute;
+  right: 5px;
+  bottom: 5px;
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid var(--muted-foreground);
+  border-bottom: 2px solid var(--muted-foreground);
+  border-radius: 0 0 2px 0;
 }

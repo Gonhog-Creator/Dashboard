@@ -3,22 +3,7 @@
 import { useEffect, useState } from "react";
 import { Cpu, HardDrive, MemoryStick, Gpu, Clock3 } from "lucide-react";
 import { cn } from "@/lib/utils";
-
-interface SysData {
-  cpu: number;
-  cores: number;
-  mem: { total: number; used: number; usedPct: number };
-  disks: { drive: string; total: number; free: number; usedPct: number }[];
-  gpu: {
-    name: string;
-    util: number;
-    temp: number;
-    memUsed: number;
-    memTotal: number;
-  } | null;
-  uptimeSec: number;
-  hostname: string;
-}
+import type { SysData } from "@/lib/system";
 
 function fmtGB(bytes: number) {
   return (bytes / 1e9).toFixed(0);
@@ -53,8 +38,13 @@ function Bar({
   );
 }
 
-export function SystemMonitor() {
-  const [data, setData] = useState<SysData | null>(null);
+export function SystemMonitor({
+  initialData,
+}: {
+  /** Server-rendered snapshot — paints instantly, polling still refreshes. */
+  initialData?: SysData | null;
+}) {
+  const [data, setData] = useState<SysData | null>(initialData ?? null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -69,13 +59,13 @@ export function SystemMonitor() {
         if (!dead) setError(e instanceof Error ? e.message : String(e));
       }
     }
-    poll();
+    if (!initialData) poll(); // server-rendered data is fresh — skip first poll
     const id = setInterval(poll, 15000);
     return () => {
       dead = true;
       clearInterval(id);
     };
-  }, []);
+  }, [initialData]);
 
   if (error) return <p className="text-sm text-destructive">{error}</p>;
   if (!data) return <p className="text-sm text-muted-foreground">Loading…</p>;

@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useState } from "react";
 import {
@@ -34,14 +34,31 @@ function thumbSrc(url: string) {
   return url.startsWith("/api/astro/image") ? `${url}&w=96` : url;
 }
 
-export function TargetList({ limit = 15 }: { limit?: number }) {
-  const [targets, setTargets] = useState<VisibleTarget[]>([]);
-  const [moonTrack, setMoonTrack] = useState<Track[]>([]);
-  const [loading, setLoading] = useState(true);
+export interface TargetListData {
+  targets: VisibleTarget[];
+  moonTrack: Track[];
+}
+
+export function TargetList({
+  limit = 15,
+  initialData,
+}: {
+  limit?: number;
+  /** Server-rendered snapshot — skips the client fetch when provided. */
+  initialData?: TargetListData | null;
+}) {
+  const [targets, setTargets] = useState<VisibleTarget[]>(
+    initialData?.targets ?? []
+  );
+  const [moonTrack, setMoonTrack] = useState<Track[]>(
+    initialData?.moonTrack ?? []
+  );
+  const [loading, setLoading] = useState(!initialData);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<VisibleTarget | null>(null);
 
   useEffect(() => {
+    if (initialData) return; // server already fetched
     fetch(`/api/astro/targets?limit=${limit}`)
       .then(async (r) => {
         const d = await r.json();
@@ -51,7 +68,7 @@ export function TargetList({ limit = 15 }: { limit?: number }) {
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
-  }, [limit]);
+  }, [limit, initialData]);
 
   if (loading)
     return <p className="text-sm text-muted-foreground">Computing visibility…</p>;

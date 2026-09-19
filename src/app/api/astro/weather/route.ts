@@ -1,10 +1,10 @@
-import { fetchTonight } from "@/lib/astro/weather";
+import { getTonight } from "@/lib/astro/weather";
 import { getSetting } from "@/lib/settings";
 import type { TonightConditions } from "@/types";
 
 export async function GET() {
   try {
-    const conditions = await fetchTonight();
+    const conditions = await getTonight();
     return Response.json(conditions);
   } catch (e) {
     // Stale-data pattern: fall back to last cached fetch

@@ -1,4 +1,5 @@
 import { prisma, ensureWal } from "./db";
+import { bust, cached } from "./cache";
 
 export const SETTING_KEYS = {
   fitsScanPath: "fits.scanPath",
@@ -28,6 +29,12 @@ export async function setSetting(key: string, value: string) {
     update: { value },
     create: { key, value },
   });
+  // Observer changes invalidate everything derived from location.
+  if (key.startsWith("observer.")) {
+    bust("observer");
+    bust("astro:tonight");
+    bust("astro:conditions");
+  }
 }
 
 export async function getAllSettings(): Promise<Record<string, string>> {
@@ -36,8 +43,13 @@ export async function getAllSettings(): Promise<Record<string, string>> {
   return Object.fromEntries(rows.map((r) => [r.key, r.value]));
 }
 
-/** Observer location: Setting table wins, env vars are the fallback/default. */
-export async function getObserver() {
+/** Observer location: Setting table wins, env vars are the fallback/default.
+ *  Cached 60s — it's read on every weather/targets computation. */
+export function getObserver() {
+  return cached("observer", 60_000, getObserverUncached);
+}
+
+async function getObserverUncached() {
   const [lat, lon, elev, name] = await Promise.all([
     getSettingOr(SETTING_KEYS.observerLat, process.env.OBSERVER_LAT ?? "35.9132"),
     getSettingOr(SETTING_KEYS.observerLon, process.env.OBSERVER_LON ?? "-79.0558"),

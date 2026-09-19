@@ -1,4 +1,5 @@
 import type { CalendarEvent } from "@/types";
+import { cached } from "@/lib/cache";
 
 /**
  * Minimal iCloud CalDAV client: PROPFIND to discover calendars, then
@@ -33,8 +34,15 @@ async function caldavRequest(
   return res.text();
 }
 
-/** Discover calendar collection URLs under the principal. */
-async function discoverCalendars(): Promise<string[]> {
+const DISCOVERY_TTL_MS = 60 * 60 * 1000;
+
+/** Discover calendar collection URLs under the principal (cached 1h — the
+ * PROPFIND costs a roundtrip and the collection list almost never changes). */
+function discoverCalendars(): Promise<string[]> {
+  return cached("caldav:calendars", DISCOVERY_TTL_MS, discoverCalendarsUncached);
+}
+
+async function discoverCalendarsUncached(): Promise<string[]> {
   const body = `<?xml version="1.0" encoding="utf-8"?>
 <d:propfind xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
   <d:prop>

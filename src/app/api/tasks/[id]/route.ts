@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { z } from "zod";
-import { prisma, ensureWal } from "@/lib/db";
+import { deleteTask, msftError, msftGuard, updateTask } from "@/lib/todo";
 
 const updateSchema = z.object({
   title: z.string().min(1).optional(),
@@ -16,32 +16,31 @@ export async function PATCH(
   req: NextRequest,
   ctx: { params: Promise<{ id: string }> }
 ) {
-  await ensureWal();
-  const { id } = await ctx.params;
-  const body = updateSchema.parse(await req.json());
+  const guard = msftGuard();
+  if (guard) return guard;
 
-  const data: Record<string, unknown> = { ...body };
-  if (body.dueDate !== undefined) {
-    data.dueDate = body.dueDate ? new Date(body.dueDate) : null;
+  try {
+    const { id } = await ctx.params;
+    const body = updateSchema.parse(await req.json());
+    const task = await updateTask(id, body);
+    return Response.json(task);
+  } catch (e) {
+    return msftError(e);
   }
-  if (body.done !== undefined) {
-    data.completedAt = body.done ? new Date() : null;
-  }
-
-  const task = await prisma.task.update({
-    where: { id },
-    data,
-    include: { project: true },
-  });
-  return Response.json(task);
 }
 
 export async function DELETE(
   _req: NextRequest,
   ctx: { params: Promise<{ id: string }> }
 ) {
-  await ensureWal();
-  const { id } = await ctx.params;
-  await prisma.task.delete({ where: { id } });
-  return new Response(null, { status: 204 });
+  const guard = msftGuard();
+  if (guard) return guard;
+
+  try {
+    const { id } = await ctx.params;
+    await deleteTask(id);
+    return new Response(null, { status: 204 });
+  } catch (e) {
+    return msftError(e);
+  }
 }

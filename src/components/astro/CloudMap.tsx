@@ -1,9 +1,9 @@
 "use client";
 
-const ZOOM = 5;
+const ZOOM = 6;
 const TILE = 256;
-const LAYER = "VIIRS_SNPP_DayNightBand_At_Sensor_Radiance";
-const MATRIX = "GoogleMapsCompatible_Level8";
+const LAYER = "MODIS_Terra_Cloud_Fraction_Night";
+const MATRIX = "GoogleMapsCompatible_Level6";
 
 function lonToX(lon: number, z: number) {
   return ((lon + 180) / 360) * 2 ** z;
@@ -14,19 +14,22 @@ function latToY(lat: number, z: number) {
 }
 
 /**
- * Night-time cloud imagery around the observer — NASA GIBS VIIRS day/night
- * band (free, no API key), rendered as a 3x3 grid centered on the location.
- * The granule for "today" is last night's overpass; before ~noon UTC it may
- * not be processed yet, so we fall back to the previous day.
+ * Night-time cloud cover around the observer — NASA GIBS MODIS Terra cloud
+ * fraction, night overpass ~10:30pm local (free, no API key), rendered as a
+ * 3x3 tile grid centered on the location. The granule for "today" is last
+ * night's pass; before ~noon UTC it may not be processed yet, so we fall
+ * back to the previous day.
  */
 export function CloudMap({
   lat,
   lon,
   fetchedAt,
+  className = "h-44",
 }: {
   lat: number;
   lon: number;
   fetchedAt: string;
+  className?: string;
 }) {
   const fetched = new Date(fetchedAt);
   const d =
@@ -55,13 +58,15 @@ export function CloudMap({
   }
 
   return (
-    <div className="relative h-44 overflow-hidden bg-black">
+    <div className={`relative overflow-hidden bg-black ${className}`}>
       <div
-        className="absolute"
+        className="absolute left-1/2 top-1/2"
         style={{
           width: TILE * 3,
           height: TILE * 3,
-          transform: `translate(${-offX}px, ${-offY}px)`,
+          // Observer's pixel is the middle tile's center + fractional offset;
+          // land it exactly on the container's center.
+          transform: `translate(${-TILE * 1.5 - offX}px, ${-TILE * 1.5 - offY}px)`,
         }}
       >
         {tiles.map((t) => (
@@ -84,7 +89,7 @@ export function CloudMap({
       {/* caption scrim */}
       <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent px-4 pb-2 pt-8">
         <p className="text-[11px] text-white/70">
-          Night satellite · NASA GIBS · {date}
+          Cloud cover · NASA GIBS MODIS Terra · {date}
         </p>
       </div>
     </div>

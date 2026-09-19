@@ -1,29 +1,28 @@
 import { ExternalLink } from "lucide-react";
-import { getSettingOr, SETTING_KEYS } from "@/lib/settings";
 
-interface Link {
+export interface Link {
   label: string;
   url: string;
 }
 
-const DEFAULT_LINKS: Link[] = [
+export const DEFAULT_LINKS: Link[] = [
   { label: "Photo-AI", url: "http://localhost:8080" },
   { label: "Immich", url: "http://localhost:2283" },
   { label: "PersonalWebsite", url: "https://localhost:3001" },
   { label: "Google Drive", url: "https://drive.google.com" },
 ];
 
-export async function QuickLinks() {
-  const raw = await getSettingOr(SETTING_KEYS.quickLinks, "");
-  let links = DEFAULT_LINKS;
-  if (raw) {
-    try {
-      links = JSON.parse(raw) as Link[];
-    } catch {
-      // keep defaults
-    }
+/** Parse the ui.quickLinks setting JSON; falls back to defaults. */
+export function parseLinks(raw: string | null): Link[] {
+  if (!raw) return DEFAULT_LINKS;
+  try {
+    return JSON.parse(raw) as Link[];
+  } catch {
+    return DEFAULT_LINKS;
   }
+}
 
+export function QuickLinks({ links }: { links: Link[] }) {
   return (
     <div className="grid grid-cols-2 gap-1.5">
       {links.map((l) => (

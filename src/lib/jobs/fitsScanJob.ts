@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db";
 import { scanFitsLibrary } from "@/lib/astro/fits";
 import { getFitsScanPath } from "@/lib/settings";
+import { bustNeedsUpdate } from "@/lib/astro/needsUpdate";
 import { registerJob } from "./scheduler";
 
 export async function runFitsScan(): Promise<string> {
@@ -56,6 +57,7 @@ export async function runFitsScan(): Promise<string> {
   const errNote = result.errors.length
     ? `, ${result.errors.length} unreadable dir(s)`
     : "";
+  bustNeedsUpdate();
   return `${result.fileCount} light frames, ${result.targets.length} targets${errNote}`;
 }
 

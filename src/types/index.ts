@@ -111,6 +111,8 @@ export interface LibraryTarget {
   filters: FilterBreakdown[];
   finals: string[];
   cover: string | null; // user-chosen cover image (rel path), else null
+  /** Integration per scope, derived from session paths (e.g. "SeeStar"). */
+  scopeBreakdown: { scope: string; frames: number; seconds: number }[];
   sessions: { id: string; date: string; frames: number; seconds: number }[];
 }
 

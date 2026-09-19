@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useState } from "react";
 import { Widget } from "@/components/layout/Widget";
@@ -50,15 +50,25 @@ function HourIcon({ h }: { h: HourlyCondition }) {
 export function TonightPanel({
   title = "Tonight",
   className,
+  contentClassName,
+  showMap = true,
+  initialData,
 }: {
   title?: string;
   className?: string;
+  contentClassName?: string;
+  showMap?: boolean;
+  /** Server-rendered snapshot — skips the client fetch when provided. */
+  initialData?: TonightConditions | null;
 }) {
-  const [data, setData] = useState<TonightConditions | null>(null);
+  const [data, setData] = useState<TonightConditions | null>(
+    initialData ?? null
+  );
   const [error, setError] = useState<string | null>(null);
   const [stale, setStale] = useState(false);
 
   useEffect(() => {
+    if (initialData) return; // server already fetched
     fetch("/api/astro/weather")
       .then(async (r) => {
         const d = await r.json();
@@ -67,7 +77,7 @@ export function TonightPanel({
         setData(d);
       })
       .catch((e) => setError(e.message));
-  }, []);
+  }, [initialData]);
 
   const level: VerdictLevel = data?.verdict.level ?? "UNKNOWN";
 
@@ -75,7 +85,7 @@ export function TonightPanel({
     <Widget
       title={title}
       className={cn(className, TILE_STYLES[level])}
-      contentClassName="flex flex-col"
+      contentClassName={cn("flex flex-col", contentClassName)}
       action={
         data && (
           <span
@@ -94,7 +104,7 @@ export function TonightPanel({
       ) : !data ? (
         <p className="text-sm text-muted-foreground">Loading…</p>
       ) : (
-        <PanelBody data={data} stale={stale} />
+        <PanelBody data={data} stale={stale} showMap={showMap} />
       )}
     </Widget>
   );
@@ -210,60 +220,65 @@ function HourlyStrip({
 function PanelBody({
   data,
   stale,
+  showMap,
 }: {
   data: TonightConditions;
   stale: boolean;
+  showMap: boolean;
 }) {
   const v = data.verdict;
   const now = new Date(data.fetchedAt).getTime();
 
   return (
-    <div className="flex flex-1 flex-col gap-5">
-      {/* Headline: moon phase + darkness window, pure typography. */}
-      <div className="flex items-center gap-4">
-        <MoonIcon
-          phase={data.moon.phase}
-          angle={data.moon.angle}
-          size={44}
-          className="shrink-0"
-        />
-        <div className="min-w-0">
-          <div className="text-xl font-semibold leading-tight tracking-tight">
-            {data.moon.name}
+    <div className="flex flex-1 flex-col gap-5 sm:flex-row">
+      <div className="flex min-w-0 flex-1 flex-col gap-5">
+        {/* Headline: moon phase + darkness window, pure typography. */}
+        <div className="flex items-center gap-4">
+          <MoonIcon
+            phase={data.moon.phase}
+            angle={data.moon.angle}
+            size={44}
+            className="shrink-0"
+          />
+          <div className="min-w-0">
+            <div className="text-xl font-semibold leading-tight tracking-tight">
+              {data.moon.name}
+            </div>
+            <div className="mt-0.5 text-sm text-muted-foreground">
+              {Math.round(data.moon.phase * 100)}% illuminated
+              {data.moon.altitude > 0 ? " · up tonight" : " · below horizon"}
+            </div>
           </div>
-          <div className="mt-0.5 text-sm text-muted-foreground">
-            {Math.round(data.moon.phase * 100)}% illuminated
-            {data.moon.altitude > 0 ? " · up tonight" : " · below horizon"}
+          <div className="ml-auto shrink-0 text-right">
+            <div className="text-sm font-medium tabular-nums">
+              {fmtTime(data.dusk)} – {fmtTime(data.dawn)}
+            </div>
+            <div className="mt-0.5 text-sm text-muted-foreground tabular-nums">
+              {data.darkHours.toFixed(1)}h dark
+            </div>
           </div>
         </div>
-        <div className="ml-auto shrink-0 text-right">
-          <div className="text-sm font-medium tabular-nums">
-            {fmtTime(data.dusk)} – {fmtTime(data.dawn)}
-          </div>
-          <div className="mt-0.5 text-sm text-muted-foreground tabular-nums">
-            {data.darkHours.toFixed(1)}h dark
-          </div>
-        </div>
+
+        {/* Verdict reasoning as one quiet line. */}
+        <p className="text-sm leading-relaxed text-muted-foreground">
+          {v.reasons.join("  ·  ")}
+          {stale && <span className="text-amber-400">  ·  stale data</span>}
+        </p>
+
+        {data.hourly.length > 0 && (
+          <HourlyStrip hourly={data.hourly} now={now} />
+        )}
       </div>
 
-      {/* Verdict reasoning as one quiet line. */}
-      <p className="text-sm leading-relaxed text-muted-foreground">
-        {v.reasons.join("  ·  ")}
-        {stale && <span className="text-amber-400">  ·  stale data</span>}
-      </p>
-
-      {data.hourly.length > 0 && (
-        <HourlyStrip hourly={data.hourly} now={now} />
-      )}
-
-      {/* Full-bleed satellite map pinned to the card's bottom edge. */}
-      <div className="-mx-4 -mb-4 mt-auto">
+      {/* Satellite map: right half on sm+, full-bleed bottom strip on mobile. */}
+      {showMap && (
         <CloudMap
           lat={data.observer.lat}
           lon={data.observer.lon}
           fetchedAt={data.fetchedAt}
+          className="-mx-4 -mb-4 h-44 sm:mx-0 sm:-mr-4 sm:-mb-4 sm:h-auto sm:w-1/2 sm:shrink-0"
         />
-      </div>
+      )}
     </div>
   );
 }

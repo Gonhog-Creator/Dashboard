@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { CalendarEvent } from "@/types";
 import { cn } from "@/lib/utils";
 
@@ -93,17 +93,25 @@ function allDayForDay(events: CalendarEvent[], day: Date): CalendarEvent[] {
 export function WeekView({
   weekStart,
   nowIso,
+  initialData,
 }: {
   /** YYYY-MM-DD of the first (Sunday) column. */
   weekStart: string;
   /** Server-rendered "now" so the client doesn't call Date() in render. */
   nowIso: string;
+  /** Server-rendered snapshot for this weekStart — skips the client fetch. */
+  initialData?: { events: CalendarEvent[]; errors: string[] } | null;
 }) {
-  const [events, setEvents] = useState<CalendarEvent[] | null>(null);
-  const [errors, setErrors] = useState<string[]>([]);
+  const [events, setEvents] = useState<CalendarEvent[] | null>(
+    initialData?.events ?? null
+  );
+  const [errors, setErrors] = useState<string[]>(initialData?.errors ?? []);
   const [now, setNow] = useState(() => new Date(nowIso));
+  const gridRef = useRef<HTMLDivElement>(null);
+  const [containerH, setContainerH] = useState(0);
 
   useEffect(() => {
+    if (initialData) return; // server already fetched this week
     fetch(`/api/calendar?from=${weekStart}&days=7`)
       .then((r) => r.json())
       .then((d) => {
@@ -111,11 +119,20 @@ export function WeekView({
         setErrors(d.errors ?? []);
       })
       .catch(() => setEvents([]));
-  }, [weekStart]);
+  }, [weekStart, initialData]);
 
   useEffect(() => {
     const id = setInterval(() => setNow(new Date()), 60_000);
     return () => clearInterval(id);
+  }, []);
+
+  // Track the scroll container's height so hours can stretch to fill it.
+  useEffect(() => {
+    const el = gridRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setContainerH(el.clientHeight));
+    ro.observe(el);
+    return () => ro.disconnect();
   }, []);
 
   const first = parseDate(weekStart);
@@ -138,22 +155,27 @@ export function WeekView({
   startH = Math.max(0, startH);
   endH = Math.min(24, Math.max(endH, startH + 1));
   const rangeMin = (endH - startH) * 60;
-  const gridH = (rangeMin / 60) * HOUR_PX;
+  // Stretch hours to fill the container; never below HOUR_PX (scrolls instead).
+  const hourPx = Math.max(
+    HOUR_PX,
+    containerH > 0 ? containerH / (endH - startH) : 0
+  );
+  const gridH = (rangeMin / 60) * hourPx;
 
   const nowMin = now.getHours() * 60 + now.getMinutes() - startH * 60;
   const showNowLine =
     days.some((d) => sameDay(d, now)) && nowMin >= 0 && nowMin <= rangeMin;
 
   return (
-    <div className="flex flex-col">
+    <div className="flex min-h-0 flex-1 flex-col">
       {errors.length > 0 && (
         <p className="mb-2 text-xs text-destructive/80">
           {errors.join(" · ")}
         </p>
       )}
 
-      <div className="overflow-x-auto">
-        <div className="min-w-[760px]">
+      <div className="flex min-h-0 flex-1 flex-col overflow-x-auto">
+        <div className="flex min-h-0 min-w-[760px] flex-1 flex-col">
           {/* Day header */}
           <div className="grid grid-cols-[44px_repeat(7,1fr)] border-b border-border">
             <div />
@@ -209,14 +231,14 @@ export function WeekView({
           </div>
 
           {/* Time grid */}
-          <div className="flex max-h-[calc(100vh-16rem)] overflow-y-auto">
+          <div ref={gridRef} className="flex min-h-0 flex-1 overflow-y-auto">
             {/* Hour gutter */}
             <div className="relative w-11 shrink-0" style={{ height: gridH }}>
               {Array.from({ length: endH - startH }, (_, i) => (
                 <span
                   key={i}
                   className="absolute right-2 -translate-y-1/2 text-[10px] tabular-nums text-muted-foreground"
-                  style={{ top: i * HOUR_PX }}
+                  style={{ top: i * hourPx }}
                 >
                   {i > 0 &&
                     new Date(2000, 0, 1, startH + i).toLocaleTimeString(
@@ -234,7 +256,7 @@ export function WeekView({
                 <div
                   key={i}
                   className="pointer-events-none absolute inset-x-0 border-t border-border/50"
-                  style={{ top: i * HOUR_PX }}
+                  style={{ top: i * hourPx }}
                 />
               ))}
 
@@ -244,7 +266,13 @@ export function WeekView({
                   className="relative border-l border-border/50"
                   style={{ height: gridH }}
                 >
-                  {segmentsForDay(events ?? [], d).map((s) => (
+                  {segmentsForDay(events ?? [], d).map((s) => {
+                    // Clamp into the visible [startH, endH] window, then
+                    // position relative to startH (startMin is from midnight).
+                    const vStart = Math.max(s.startMin, startH * 60);
+                    const vEnd = Math.min(s.endMin, endH * 60);
+                    if (vEnd <= vStart) return null;
+                    return (
                     <div
                       key={s.event.id}
                       title={`${s.event.title}${
@@ -255,9 +283,9 @@ export function WeekView({
                         SOURCE_CHIP[s.event.source]
                       )}
                       style={{
-                        top: (s.startMin / 60) * HOUR_PX,
+                        top: ((vStart - startH * 60) / 60) * hourPx,
                         height: Math.max(
-                          ((s.endMin - s.startMin) / 60) * HOUR_PX,
+                          ((vEnd - vStart) / 60) * hourPx,
                           MIN_BLOCK_PX
                         ),
                         left: `calc(${(s.lane / s.lanes) * 100}% + 1px)`,
@@ -276,13 +304,14 @@ export function WeekView({
                         </div>
                       )}
                     </div>
-                  ))}
+                    );
+                  })}
 
                   {/* Now line */}
                   {showNowLine && sameDay(d, now) && (
                     <div
                       className="pointer-events-none absolute inset-x-0 z-10"
-                      style={{ top: (nowMin / 60) * HOUR_PX }}
+                      style={{ top: (nowMin / 60) * hourPx }}
                     >
                       <div className="relative border-t-2 border-red-500">
                         <div className="absolute -left-1 -top-[4px] size-1.5 rounded-full bg-red-500" />

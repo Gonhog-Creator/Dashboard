@@ -1,5 +1,6 @@
 import { prisma, ensureWal } from "@/lib/db";
 import { getSetting } from "@/lib/settings";
+import { listTasks } from "@/lib/todo";
 import { fetchMergedEvents } from "@/lib/calendar/merge";
 import type { TonightConditions } from "@/types";
 
@@ -14,21 +15,16 @@ export async function buildContext(): Promise<string> {
     "Answer concisely. You have live access to their tasks, calendar, and astrophotography data below.",
   ];
 
-  // Tasks
+  // Tasks (Microsoft To Do)
   try {
-    const tasks = await prisma.task.findMany({
-      where: { done: false },
-      orderBy: [{ dueDate: "asc" }, { priority: "desc" }],
-      take: 20,
-      include: { project: true },
-    });
+    const tasks = (await listTasks({ done: false })).slice(0, 20);
     if (tasks.length) {
       parts.push(
         "## Open tasks\n" +
           tasks
             .map(
               (t) =>
-                `- ${t.title}${t.dueDate ? ` (due ${t.dueDate.toISOString().slice(0, 10)})` : ""}${t.isAstro ? " [astro]" : ""}`
+                `- ${t.title}${t.dueDate ? ` (due ${t.dueDate.slice(0, 10)})` : ""}${t.isAstro ? " [astro]" : ""}`
             )
             .join("\n")
       );

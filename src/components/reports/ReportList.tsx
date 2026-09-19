@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 
-interface Report {
+export interface Report {
   id: string;
   type: string;
   title: string;
@@ -13,17 +13,25 @@ interface Report {
   generatedAt: string;
 }
 
-export function ReportList({ limit = 20 }: { limit?: number }) {
-  const [reports, setReports] = useState<Report[]>([]);
-  const [loading, setLoading] = useState(true);
+export function ReportList({
+  limit = 20,
+  initialReports,
+}: {
+  limit?: number;
+  /** Server-rendered snapshot — skips the client fetch when provided. */
+  initialReports?: Report[] | null;
+}) {
+  const [reports, setReports] = useState<Report[]>(initialReports ?? []);
+  const [loading, setLoading] = useState(!initialReports);
   const [expanded, setExpanded] = useState<string | null>(null);
 
   useEffect(() => {
+    if (initialReports) return; // server already fetched
     fetch(`/api/reports?limit=${limit}`)
       .then((r) => r.json())
       .then((d) => setReports(d.reports ?? []))
       .finally(() => setLoading(false));
-  }, [limit]);
+  }, [limit, initialReports]);
 
   if (loading)
     return <p className="text-sm text-muted-foreground">Loading…</p>;

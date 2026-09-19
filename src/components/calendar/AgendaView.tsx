@@ -27,12 +27,27 @@ function dayLabel(iso: string): string {
   });
 }
 
-export function AgendaView({ days = 2 }: { days?: number }) {
-  const [events, setEvents] = useState<CalendarEvent[]>([]);
-  const [errors, setErrors] = useState<string[]>([]);
-  const [loading, setLoading] = useState(true);
+export interface AgendaData {
+  events: CalendarEvent[];
+  errors: string[];
+}
+
+export function AgendaView({
+  days = 2,
+  initialData,
+}: {
+  days?: number;
+  /** Server-rendered snapshot — skips the client fetch when provided. */
+  initialData?: AgendaData | null;
+}) {
+  const [events, setEvents] = useState<CalendarEvent[]>(
+    initialData?.events ?? []
+  );
+  const [errors, setErrors] = useState<string[]>(initialData?.errors ?? []);
+  const [loading, setLoading] = useState(!initialData);
 
   useEffect(() => {
+    if (initialData) return; // server already fetched
     fetch(`/api/calendar?days=${days}`)
       .then((r) => r.json())
       .then((d) => {
@@ -40,7 +55,7 @@ export function AgendaView({ days = 2 }: { days?: number }) {
         setErrors(d.errors ?? []);
       })
       .finally(() => setLoading(false));
-  }, [days]);
+  }, [days, initialData]);
 
   if (loading)
     return <p className="text-sm text-muted-foreground">Loading…</p>;

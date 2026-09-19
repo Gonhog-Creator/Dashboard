@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { prisma, ensureWal } from "@/lib/db";
+import { bustNeedsUpdate } from "@/lib/astro/needsUpdate";
 
 export async function POST(
   _req: NextRequest,
@@ -11,5 +12,6 @@ export async function POST(
     where: { id },
     data: { published: true },
   });
+  bustNeedsUpdate();
   return Response.json(target);
 }

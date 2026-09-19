@@ -6,6 +6,7 @@ import {
   Calendar,
   CheckSquare,
   FileText,
+  FlaskConical,
   GitBranch,
   Home,
   ListTodo,
@@ -19,6 +20,7 @@ import { cn } from "@/lib/utils";
 const NAV = [
   { href: "/", label: "Today", icon: Home },
   { href: "/astro", label: "Astro", icon: Telescope },
+  { href: "/science", label: "Science Labs", icon: FlaskConical },
   { href: "/calendar", label: "Calendar", icon: Calendar },
   { href: "/tasks", label: "Tasks", icon: ListTodo },
   { href: "/chat", label: "Chat", icon: MessageSquare },

@@ -2,6 +2,7 @@ import { Body, Equator, Horizon, type Observer } from "astronomy-engine";
 import { CATALOG, commonName } from "./catalog";
 import { darknessWindow } from "./weather";
 import { getAstroObserver } from "./location";
+import { cached } from "@/lib/cache";
 import type { VisibleTarget } from "@/types";
 
 const STEP_MIN = 10;
@@ -20,22 +21,35 @@ function angularSeparation(
   return Math.acos(Math.min(1, Math.max(-1, cos))) / toRad;
 }
 
+export interface TonightVisibility {
+  targets: VisibleTarget[];
+  moonTrack: { t: string; alt: number }[];
+}
+
 export function visibleTonight(
   observer: Observer,
   from = new Date()
-): VisibleTarget[] {
+): TonightVisibility {
   const { dusk, dawn } = darknessWindow(observer, from);
-  if (!dusk || !dawn) return [];
+  if (!dusk || !dawn) return { targets: [], moonTrack: [] };
 
   const results: VisibleTarget[] = [];
   const stepMs = STEP_MIN * 60 * 1000;
 
-  // Moon track for separation scoring
-  const moonAt = (d: Date) => {
+  // Compute the moon's position once per step — previously recomputed per
+  // target per step (~catalog × steps extra astronomy-engine calls).
+  const steps: { d: Date; moon: { ra: number; dec: number; alt: number } }[] = [];
+  const moonTrack: { t: string; alt: number }[] = [];
+  for (let ms = dusk.getTime(); ms <= dawn.getTime(); ms += stepMs) {
+    const d = new Date(ms);
     const eq = Equator(Body.Moon, d, observer, true, true);
     const hor = Horizon(d, observer, eq.ra, eq.dec, "normal");
-    return { ra: eq.ra, dec: eq.dec, alt: hor.altitude };
-  };
+    steps.push({ d, moon: { ra: eq.ra, dec: eq.dec, alt: hor.altitude } });
+    moonTrack.push({
+      t: d.toISOString(),
+      alt: Math.round(hor.altitude * 10) / 10,
+    });
+  }
 
   for (const t of CATALOG) {
     let maxAlt = -90;
@@ -44,8 +58,7 @@ export function visibleTonight(
     let minMoonSep = 180;
     const track: { t: string; alt: number }[] = [];
 
-    for (let ms = dusk.getTime(); ms <= dawn.getTime(); ms += stepMs) {
-      const d = new Date(ms);
+    for (const { d, moon } of steps) {
       const hor = Horizon(d, observer, t.ra, t.dec, "normal");
       track.push({ t: d.toISOString(), alt: Math.round(hor.altitude * 10) / 10 });
       if (hor.altitude > maxAlt) {
@@ -54,7 +67,6 @@ export function visibleTonight(
       }
       if (hor.altitude >= MIN_ALT) aboveMin += STEP_MIN / 60;
 
-      const moon = moonAt(d);
       if (moon.alt > 0) {
         const sep = angularSeparation(t.ra, t.dec, moon.ra, moon.dec);
         if (sep < minMoonSep) minMoonSep = sep;
@@ -86,26 +98,20 @@ export function visibleTonight(
     });
   }
 
-  return results.sort((a, b) => b.score - a.score);
+  results.sort((a, b) => b.score - a.score);
+  return { targets: results, moonTrack };
 }
 
-export async function tonightTargets(limit = 25): Promise<VisibleTarget[]> {
-  const { observer } = await getAstroObserver();
-  return visibleTonight(observer).slice(0, limit);
-}
+const TONIGHT_TTL_MS = 20 * 60 * 1000;
 
-/** Moon altitude samples across tonight's darkness window (for chart overlays). */
-export async function moonTrackTonight(): Promise<{ t: string; alt: number }[]> {
-  const { observer } = await getAstroObserver();
-  const { dusk, dawn } = darknessWindow(observer);
-  if (!dusk || !dawn) return [];
-  const stepMs = STEP_MIN * 60 * 1000;
-  const track: { t: string; alt: number }[] = [];
-  for (let ms = dusk.getTime(); ms <= dawn.getTime(); ms += stepMs) {
-    const d = new Date(ms);
-    const eq = Equator(Body.Moon, d, observer, true, true);
-    const hor = Horizon(d, observer, eq.ra, eq.dec, "normal");
-    track.push({ t: d.toISOString(), alt: Math.round(hor.altitude * 10) / 10 });
-  }
-  return track;
+/**
+ * Tonight's visibility computation, cached. The catalog scan is pure CPU work
+ * (~15k astronomy-engine calls) and only changes meaningfully over tens of
+ * minutes, so a 20-min TTL makes repeat requests effectively free.
+ */
+export function tonightData(): Promise<TonightVisibility> {
+  return cached("astro:tonight", TONIGHT_TTL_MS, async () => {
+    const { observer } = await getAstroObserver();
+    return visibleTonight(observer);
+  });
 }

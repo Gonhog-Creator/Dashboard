@@ -101,3 +101,17 @@ model Report {
 
   @@index([type, generatedAt])
 }
+
+model ScienceNews {
+  id          String    @id @default(cuid())
+  facilityId  String // key into src/lib/science/facilities.ts
+  title       String
+  url         String
+  summary     String?
+  publishedAt DateTime?
+  fetchedAt   DateTime  @default(now())
+  seenAt      DateTime? // null = unseen -> marker flashes on the globe
+
+  @@unique([facilityId, url])
+  @@index([facilityId, seenAt])
+}

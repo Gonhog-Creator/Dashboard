@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Check } from "lucide-react";
 
-interface NeedsUpdateItem {
+export interface NeedsUpdateItem {
   id: string;
   name: string;
   catalogName: string | null;
@@ -14,16 +14,25 @@ interface NeedsUpdateItem {
   lastImagedAt: string | null;
 }
 
-interface NeedsUpdateResponse {
+export interface NeedsUpdateResponse {
   needsUpdate: NeedsUpdateItem[];
   publishedCount: number;
   scannedCount: number;
   error: string | null;
 }
 
-export function NeedsUpdateList() {
-  const [data, setData] = useState<NeedsUpdateResponse | null>(null);
-  const [loading, setLoading] = useState(true);
+export function NeedsUpdateList({
+  limit,
+  initialData,
+}: {
+  limit?: number;
+  /** Server-rendered snapshot — skips the client fetch when provided. */
+  initialData?: NeedsUpdateResponse | null;
+}) {
+  const [data, setData] = useState<NeedsUpdateResponse | null>(
+    initialData ?? null
+  );
+  const [loading, setLoading] = useState(!initialData);
 
   const load = useCallback(async () => {
     const res = await fetch("/api/astro/needs-update");
@@ -32,8 +41,9 @@ export function NeedsUpdateList() {
   }, []);
 
   useEffect(() => {
+    if (initialData) return; // server already fetched
     queueMicrotask(load);
-  }, [load]);
+  }, [load, initialData]);
 
   async function markPublished(id: string) {
     await fetch(`/api/astro/targets/${id}/publish`, { method: "POST" });
@@ -59,9 +69,12 @@ export function NeedsUpdateList() {
       </p>
     );
 
+  const items = limit ? data.needsUpdate.slice(0, limit) : data.needsUpdate;
+  const remaining = data.needsUpdate.length - items.length;
+
   return (
     <ul className="flex flex-col gap-1.5">
-      {data.needsUpdate.map((t) => (
+      {items.map((t) => (
         <li
           key={t.id}
           className="flex items-center gap-2 rounded-md border border-border px-2.5 py-1.5"
@@ -80,6 +93,11 @@ export function NeedsUpdateList() {
           </Button>
         </li>
       ))}
+      {remaining > 0 && (
+        <li className="px-1 text-xs text-muted-foreground">
+          +{remaining} more not shown
+        </li>
+      )}
     </ul>
   );
 }

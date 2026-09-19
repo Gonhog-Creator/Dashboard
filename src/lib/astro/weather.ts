@@ -11,6 +11,8 @@ import type {
   Verdict,
 } from "@/types";
 import { getAstroObserver } from "./location";
+import { bust, cached } from "@/lib/cache";
+import { setSetting } from "@/lib/settings";
 
 const OPEN_METEO =
   "https://api.open-meteo.com/v1/forecast" +
@@ -179,4 +181,27 @@ export async function fetchTonight(): Promise<TonightConditions> {
     verdict,
     fetchedAt: new Date().toISOString(),
   };
+}
+
+const TONIGHT_TTL_MS = 10 * 60 * 1000;
+
+/**
+ * Tonight's conditions, cached in-process for 10 min (Open-Meteo itself is
+ * revalidated every 15 min). Fresh computations are persisted to
+ * `cache.tonight` so the API route's stale-fallback stays current.
+ */
+export function getTonight(): Promise<TonightConditions> {
+  return cached("astro:conditions", TONIGHT_TTL_MS, async () => {
+    const conditions = await fetchTonight();
+    await setSetting("cache.tonight", JSON.stringify(conditions)).catch(
+      () => {}
+    );
+    return conditions;
+  });
+}
+
+/** Force a fresh fetch — used by the weather cron job. */
+export async function refreshTonight(): Promise<TonightConditions> {
+  bust("astro:conditions");
+  return getTonight();
 }
