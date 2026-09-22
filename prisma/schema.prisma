@@ -115,3 +115,432 @@ model ScienceNews {
   @@unique([facilityId, url])
   @@index([facilityId, seenAt])
 }
+
+// ---------- Finance ----------
+
+model FinInstitution {
+  id        String       @id @default(cuid())
+  name      String // 'First Citizens', 'Fidelity', 'Coinbase', 'Manual'
+  type      String // 'bank' | 'brokerage' | 'crypto' | 'manual'
+  portalUrl String? // outbound quick link
+  accounts  FinAccount[]
+  plaidItem PlaidItem?
+  createdAt DateTime     @default(now())
+}
+
+model FinAccount {
+  id               String              @id @default(cuid())
+  institutionId    String
+  institution      FinInstitution      @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  plaidAccountId   String?
+  name             String // display name
+  mask             String? // last 4
+  type             String // checking|savings|credit_card|investment|crypto|loan|other
+  subtype          String?
+  currency         String              @default("USD")
+  currentBalance   Float?
+  balanceUpdatedAt DateTime?
+  isActive         Boolean             @default(true)
+  transactions     FinTransaction[]
+  holdings         FinHolding[]
+  snapshots        FinBalanceSnapshot[]
+  imports          FinImport[]
+  createdAt        DateTime            @default(now())
+
+  @@index([institutionId])
+  @@index([plaidAccountId])
+}
+
+model FinTransaction {
+  id                  String         @id @default(cuid())
+  accountId           String
+  account             FinAccount     @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  plaidTransactionId  String?
+  date                DateTime
+  description         String
+  merchantName        String?
+  amount              Float // negative = money out
+  categoryId          String?
+  category            FinCategory?   @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  plaidCategory       String? // raw plaid personal_finance_category
+  transactionType     String? // purchase|payment|deposit|withdrawal|transfer|buy|sell|dividend|reinvest|fee|interest
+  status              String         @default("posted") // posted|pending
+  isRecurring         Boolean        @default(false)
+  source              String // plaid|csv|ofx|pdf|manual
+  dedupeHash          String? // sha1(accountId|date|amount|normDesc) — file + cross-source dedup
+  importId            String?
+  import              FinImport?     @relation(fields: [importId], references: [id], onDelete: SetNull)
+  notes               String?
+  createdAt           DateTime       @default(now())
+
+  @@index([accountId, date])
+  @@index([plaidTransactionId])
+  @@index([dedupeHash])
+  @@index([categoryId, date])
+  @@index([date])
+}
+
+model FinCategory {
+  id           String              @id @default(cuid())
+  name         String              @unique
+  color        String              @default("#3b82f6")
+  keywords     String? // comma-separated, used by auto-categorizer
+  isIncome     Boolean             @default(false)
+  transactions FinTransaction[]
+  rules        FinRule[]
+  recurring    FinRecurringStream[]
+  createdAt    DateTime            @default(now())
+}
+
+/** Learned/explicit merchant→category rule. Key = normalized description. */
+model FinRule {
+  id         String      @id @default(cuid())
+  pattern    String      @unique // normalized description or keyword
+  categoryId String
+  category   FinCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  createdAt  DateTime    @default(now())
+}
+
+model FinHolding {
+  id          String     @id @default(cuid())
+  accountId   String
+  account     FinAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  symbol      String?
+  description String?
+  quantity    Float?
+  price       Float?
+  value       Float?
+  costBasis   Float?
+  asOf        DateTime // statement/snapshot date
+  source      String // plaid|csv|manual
+  createdAt   DateTime   @default(now())
+
+  @@index([accountId, asOf])
+}
+
+model FinBalanceSnapshot {
+  id        String     @id @default(cuid())
+  accountId String
+  account   FinAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  date      String // YYYY-MM-DD
+  balance   Float
+
+  @@unique([accountId, date])
+}
+
+model FinRecurringStream {
+  id              String       @id @default(cuid())
+  description     String // normalized pattern
+  displayName     String?
+  amount          Float?
+  frequency       String // weekly|biweekly|monthly|quarterly|yearly
+  nextExpected    DateTime?
+  lastSeen        DateTime?
+  isActive        Boolean      @default(true)
+  categoryId      String?
+  category        FinCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  createdAt       DateTime     @default(now())
+}
+
+model FinImport {
+  id         String           @id @default(cuid())
+  filename   String
+  fileType   String // transaction|position
+  accountId  String?
+  account    FinAccount?      @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  rowCount   Int              @default(0)
+  skipped    Int              @default(0) // deduped rows
+  uploadedAt DateTime         @default(now())
+  transactions FinTransaction[]
+}
+
+model PlaidItem {
+  id            String         @id @default(cuid())
+  itemId        String         @unique
+  accessToken   String
+  institutionId String         @unique
+  institution   FinInstitution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  cursor        String? // transactions/sync cursor
+  status        String         @default("ok") // ok|error|login_required
+  createdAt     DateTime       @default(now())
+}
+
+// ---------- Clash of Clans ----------
+
+/** Known players: current/past clan members + tracked accounts (you). */
+model CocPlayer {
+  tag         String   @id // "#ABC123" (uppercase, with #)
+  name        String
+  townHall    Int      @default(0)
+  role        String? // leader|coLeader|elder|member
+  warPreference String? // in|out — from member list
+  inClan      Boolean  @default(true)
+  isMe        Boolean  @default(false)
+  // Live values from the clan member list (refreshed every poll).
+  trophies         Int  @default(0)
+  donations        Int  @default(0)
+  donationsReceived Int @default(0)
+  expLevel         Int  @default(0)
+  clanRank         Int?
+  previousClanRank Int?
+  firstSeenAt DateTime @default(now())
+  lastSeenAt  DateTime @default(now())
+  snapshots   CocPlayerSnapshot[]
+}
+
+/** Daily per-member point-in-time capture — the progress time series. */
+model CocPlayerSnapshot {
+  id                       String           @id @default(cuid())
+  playerTag                String
+  player                   CocPlayer        @relation(fields: [playerTag], references: [tag], onDelete: Cascade)
+  ts                       DateTime         @default(now())
+  townHall                 Int              @default(0)
+  expLevel                 Int              @default(0)
+  trophies                 Int              @default(0)
+  bestTrophies             Int              @default(0)
+  legendTrophies           Int?
+  leagueName               String?
+  attackWins               Int              @default(0)
+  defenseWins              Int              @default(0)
+  warStars                 Int              @default(0)
+  donations                Int              @default(0)
+  donationsReceived        Int              @default(0)
+  clanCapitalContributions Int              @default(0)
+  builderHall              Int?
+  builderBaseTrophies      Int              @default(0)
+  versusBattleWins         Int              @default(0)
+  clanRank                 Int? // rank in clan member list at snapshot time
+  legendPrevSeason         Int? // legendStatistics.previousSeason.trophies
+  legendBestSeason         Int? // legendStatistics.bestSeason.trophies
+  achievements             String? // JSON [{name,stars,value,target}]
+  heroes                   String? // JSON [{name,level,maxLevel,village}]
+  heroEquipment            String? // JSON [{name,level,maxLevel}]
+  troops                   String? // JSON [{name,level,maxLevel}] (home village only)
+  spells                   String? // JSON [{name,level,maxLevel}] (home village only)
+  pets                     String? // JSON [{name,level,maxLevel}] (home village only)
+
+  @@index([playerTag, ts])
+}
+
+/** Clan-level daily capture. */
+model CocClanSnapshot {
+  id               String   @id @default(cuid())
+  ts               DateTime @default(now())
+  clanLevel        Int      @default(0)
+  clanPoints       Int      @default(0)
+  members          Int      @default(0)
+  warWins          Int      @default(0)
+  warWinStreak     Int      @default(0)
+  warLeague        String?
+  capitalLeague    String?
+  capitalHallLevel Int?
+  capitalPoints    Int      @default(0)
+  builderBasePoints Int     @default(0)
+  warFrequency     String?
+  location         String?
+  description      String?
+  isWarLogPublic   Boolean?
+}
+
+/**
+ * A war we observed via /currentwar or /clanwarleagues/wars.
+ * Regular wars have no warTag — identity is (type, startTime, opponentTag).
+ */
+model CocWar {
+  id                  String         @id @default(cuid())
+  warTag              String?        @unique // CWL only
+  type                String // regular|cwl
+  season              String? // CWL season e.g. "2026-09"
+  state               String // preparation|inWar|warEnded|notInWar
+  startTime           DateTime?
+  endTime             DateTime?
+  teamSize            Int             @default(0)
+  attacksPerMember    Int             @default(1)
+  opponentTag         String?
+  opponentName        String?
+  opponentLevel       Int?
+  clanBadge           String? // badgeUrls.medium
+  opponentBadge       String?
+  preparationStartTime DateTime?
+  clanAttacks         Int             @default(0) // attacks used (warlog/live)
+  opponentAttacks     Int             @default(0)
+  expEarned           Int             @default(0) // war XP (warlog)
+  opponentMembers     String? // JSON [{tag,name,th,pos}] — enemy roster
+  clanStars           Int             @default(0)
+  opponentStars       Int             @default(0)
+  clanDestruction     Float           @default(0)
+  opponentDestruction Float           @default(0)
+  result              String? // win|lose|tie (from warlog or derived)
+  members             String? // JSON [{tag,name,th,pos}] — our war roster at capture time
+  attacks             CocWarAttack[]
+  updatedAt           DateTime        @updatedAt
+
+  @@index([startTime])
+  @@index([type, state])
+}
+
+/** One attack inside a captured war. isClanSide distinguishes our attacks
+ *  from opponent defenses; order is unique per side per war. */
+model CocWarAttack {
+  id             String  @id @default(cuid())
+  warId          String
+  war            CocWar  @relation(fields: [warId], references: [id], onDelete: Cascade)
+  isClanSide     Boolean // true = our member attacked
+  order          Int
+  attackerTag    String
+  attackerName   String
+  attackerTH     Int     @default(0)
+  attackerMapPos Int     @default(0)
+  defenderTag    String
+  defenderName   String
+  defenderTH     Int     @default(0)
+  defenderMapPos Int     @default(0)
+  stars          Int     @default(0)
+  destruction    Float   @default(0)
+  duration       Int?
+
+  @@unique([warId, isClanSide, order])
+  @@index([attackerTag])
+}
+
+/** Clan capital raid weekend. */
+model CocRaidSeason {
+  id                      String   @id @default(cuid())
+  seasonId                String   @unique // raid start date from API
+  state                   String?
+  startTime               DateTime?
+  endTime                 DateTime?
+  capitalTotalLoot        Int      @default(0)
+  raidsCompleted          Int      @default(0)
+  totalAttacks            Int      @default(0)
+  enemyDistrictsDestroyed Int      @default(0)
+  offensiveReward         Int      @default(0)
+  defensiveReward         Int      @default(0)
+  members                 String? // JSON [{tag,name,attacks,capitalResourcesLooted}]
+  attackLog               String? // JSON — per-district attack detail
+  defenseLog              String? // JSON — districts we lost
+  updatedAt               DateTime @updatedAt
+}
+
+/** CWL league group for a season — the 8-clan bracket. */
+model CocCwlSeason {
+  id        String   @id @default(cuid())
+  season    String   @unique // e.g. "2026-09"
+  state     String?
+  clans     String? // JSON [{tag,name,level,badge,members:[{tag,name,th}]}]
+  rounds    String? // JSON string[][] — warTags per round
+  updatedAt DateTime @updatedAt
+}
+
+/** Entries from /players/{tag}/battlelog — ranked/legend battles for tracked
+ *  players. Fields are best-effort parsed; raw keeps the full entry. */
+model CocBattle {
+  id            String   @id @default(cuid())
+  playerTag     String
+  ts            DateTime
+  type          String   @default("unknown")
+  stars         Int?
+  destruction   Float?
+  trophiesDelta Int?
+  opponentTag   String?
+  opponentName  String?
+  opponentTH    Int?
+  lootGold      Int?
+  lootElixir    Int?
+  lootDark      Int?
+  raw           String?
+
+  @@unique([playerTag, ts, type])
+  @@index([playerTag, ts])
+}
+
+/** Daily snapshot of War Report meta data (armies/heroes/equipment/battle-stats). */
+model CocMetaSnapshot {
+  id        String   @id @default(cuid())
+  kind      String // armies|heroes|equipment|battle-stats
+  date      String // legend day / season date YYYY-MM-DD
+  payload   String // JSON raw response
+  fetchedAt DateTime @default(now())
+
+  @@unique([kind, date])
+}
+
+// ---------------------------------------------------------------------------
+// People — personal CRM
+// ---------------------------------------------------------------------------
+
+/** A person in the user's network. */
+model Person {
+  id                 String   @id @default(cuid())
+  name               String
+  company            String?
+  role               String?
+  email              String?
+  phone              String?
+  location           String? // freeform — "Sydney, Australia"
+  birthday           String? // YYYY-MM-DD or MM-DD
+  meetUrl            String? // personal Google Meet room link
+  avatarUrl          String?
+  notes              String?
+  tags               String   @default("[]") // JSON string[]
+  customFields       String   @default("{}") // JSON object for arbitrary fields
+  /** External dedupe key: "people/c123" (Google) or "carddav:{uid}" (Apple). */
+  googleResourceName String?  @unique
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  relsFrom PersonRelationship[] @relation("relFrom")
+  relsTo   PersonRelationship[] @relation("relTo")
+  links    PersonLink[]
+  tasks    PersonTask[]
+
+  @@index([name])
+  @@index([company])
+  @@index([location])
+}
+
+/**
+ * Directed edge between two people. `type` is one of RELATIONSHIP_TYPES
+ * (src/lib/people.ts). Symmetric types (spouse, sibling, friend, colleague)
+ * are stored once; directed types (parent/child, manager/report) carry
+ * meaning in the from→to direction.
+ */
+model PersonRelationship {
+  id     String  @id @default(cuid())
+  fromId String
+  toId   String
+  type   String
+  label  String? // optional freeform note on the relationship
+  from   Person  @relation("relFrom", fields: [fromId], references: [id], onDelete: Cascade)
+  to     Person  @relation("relTo", fields: [toId], references: [id], onDelete: Cascade)
+
+  @@unique([fromId, toId, type])
+  @@index([toId])
+}
+
+/** External link attached to a person — Drive file, meeting notes, any URL. */
+model PersonLink {
+  id        String   @id @default(cuid())
+  personId  String
+  kind      String   @default("url") // drive | url
+  title     String
+  url       String
+  fileId    String? // Drive file id when kind = drive
+  mimeType  String?
+  createdAt DateTime @default(now())
+  person    Person   @relation(fields: [personId], references: [id], onDelete: Cascade)
+
+  @@index([personId])
+}
+
+/** Link between a person and a Microsoft To Do task (composite "listId:taskId"). */
+model PersonTask {
+  id        String   @id @default(cuid())
+  personId  String
+  taskId    String
+  title     String // cached snapshot of the task title
+  createdAt DateTime @default(now())
+  person    Person   @relation(fields: [personId], references: [id], onDelete: Cascade)
+
+  @@unique([personId, taskId])
+}

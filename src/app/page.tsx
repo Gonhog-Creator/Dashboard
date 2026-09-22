@@ -11,6 +11,8 @@ import { getNeedsUpdate } from "@/lib/astro/needsUpdate";
 import { calendarRange, fetchMergedEvents } from "@/lib/calendar/merge";
 import { listTasks } from "@/lib/todo";
 import { getSystemInfo } from "@/lib/system";
+import { getFinanceOverview } from "@/lib/finance/overview";
+import { getWidgetData } from "@/lib/coc/overview";
 import { prisma, ensureWal } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
@@ -20,7 +22,7 @@ const LAYOUT_KEY = "dashboard.layout.v2";
 /** Fetch every widget's data in parallel; failures degrade to client fetch. */
 async function loadDashboardData(): Promise<DashboardData> {
   const { start, end } = calendarRange(2);
-  const [tonight, agenda, tasks, targets, report, needsUpdate, system, links] =
+  const [tonight, agenda, tasks, targets, report, needsUpdate, system, links, finance, coc] =
     await Promise.all([
       getTonight().catch(() => null),
       fetchMergedEvents(start, end).catch(() => null),
@@ -35,8 +37,10 @@ async function loadDashboardData(): Promise<DashboardData> {
       getNeedsUpdate().catch(() => null),
       getSystemInfo().catch(() => null),
       getSetting(SETTING_KEYS.quickLinks).then(parseLinks).catch(() => null),
+      getFinanceOverview().catch(() => null),
+      getWidgetData().catch(() => null),
     ]);
-  return { tonight, agenda, tasks, targets, report, needsUpdate, system, links };
+  return { tonight, agenda, tasks, targets, report, needsUpdate, system, links, finance, coc };
 }
 
 export default async function Home() {

@@ -32,6 +32,14 @@ import {
 import { TaskList, type TaskItem } from "@/components/tasks/TaskList";
 import { ReportList, type Report } from "@/components/reports/ReportList";
 import { SystemMonitor } from "@/components/SystemMonitor";
+import {
+  FinanceWidget,
+  type FinanceWidgetData,
+} from "@/components/finance/FinanceWidget";
+import {
+  CocWidget,
+  type CocWidgetData,
+} from "@/components/coc/CocWidget";
 import { cn } from "@/lib/utils";
 import type { TonightConditions } from "@/types";
 import type { SysData } from "@/lib/system";
@@ -46,6 +54,8 @@ export interface DashboardData {
   needsUpdate: NeedsUpdateResponse | null;
   system: SysData | null;
   links: Link[] | null;
+  finance: FinanceWidgetData | null;
+  coc: CocWidgetData | null;
 }
 
 import "react-grid-layout/css/styles.css";
@@ -162,6 +172,24 @@ const WIDGETS: Record<string, WidgetDef> = {
       </Widget>
     ),
   },
+  finance: {
+    minW: 1,
+    minH: 3,
+    render: (d) => (
+      <Widget title="Finance" className="h-full" contentClassName={SCROLL}>
+        <FinanceWidget initialData={d.finance} />
+      </Widget>
+    ),
+  },
+  coc: {
+    minW: 1,
+    minH: 3,
+    render: (d) => (
+      <Widget title="Clash of Clans" className="h-full" contentClassName={SCROLL}>
+        <CocWidget initialData={d.coc} />
+      </Widget>
+    ),
+  },
 };
 
 /** Default arrangement at 6 columns — 2 grid units = 1 of the old fixed columns. */
@@ -175,6 +203,8 @@ const DEFAULT_LAYOUT: LayoutItem[] = [
   { i: "needsUpdate", x: 2, y: 16, w: 2, h: 8 },
   { i: "system", x: 4, y: 16, w: 2, h: 8 },
   { i: "links", x: 0, y: 20, w: 2, h: 4 },
+  { i: "finance", x: 2, y: 24, w: 2, h: 4 },
+  { i: "coc", x: 4, y: 24, w: 2, h: 4 },
 ];
 
 export interface SavedLayout {

@@ -30,6 +30,17 @@ prisma/dev.db
 prisma/dev.db-journal
 *.db
 *.db-journal
+*.db-shm
+*.db-wal
+prisma/backup-corrupt/
+
+# Financial data (statements, exports — never commit)
+finance-data/
+tempfincdetials/
+*.pdf
+*.ofx
+*.qfx
+*.qbo
 
 # Package manager alternatives
 .pnp.*

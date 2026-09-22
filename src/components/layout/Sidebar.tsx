@@ -12,8 +12,11 @@ import {
   ListTodo,
   MessageSquare,
   Settings,
+  Swords,
   Telescope,
   Timer,
+  Users,
+  Wallet,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -21,6 +24,9 @@ const NAV = [
   { href: "/", label: "Today", icon: Home },
   { href: "/astro", label: "Astro", icon: Telescope },
   { href: "/science", label: "Science Labs", icon: FlaskConical },
+  { href: "/finance", label: "Finance", icon: Wallet },
+  { href: "/people", label: "People", icon: Users },
+  { href: "/coc", label: "Clash", icon: Swords },
   { href: "/calendar", label: "Calendar", icon: Calendar },
   { href: "/tasks", label: "Tasks", icon: ListTodo },
   { href: "/chat", label: "Chat", icon: MessageSquare },
