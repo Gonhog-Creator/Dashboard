@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Users } from "lucide-react";
+import { LayoutGrid, List, Users } from "lucide-react";
 import { Widget } from "@/components/layout/Widget";
 import { StatIcon } from "./icons";
 import {
@@ -106,6 +106,7 @@ export function CapitalPanel({ refreshKey }: { refreshKey: number }) {
   const [seasons, setSeasons] = useState<RaidSeason[] | null>(null);
   const [open, setOpen] = useState<string | null>(null);
   const [selMember, setSelMember] = useState<string | null>(null);
+  const [view, setView] = useState<"list" | "grid">("list");
 
   useEffect(() => {
     fetch("/api/coc/raids")
@@ -204,6 +205,40 @@ export function CapitalPanel({ refreshKey }: { refreshKey: number }) {
         </Widget>
       )}
 
+      <div className="flex items-center justify-end gap-1">
+        <button
+          type="button"
+          onClick={() => setView("list")}
+          title="Row view"
+          className={`rounded-md border border-border p-1.5 transition-colors ${
+            view === "list"
+              ? "bg-accent text-foreground"
+              : "text-muted-foreground hover:bg-accent/50"
+          }`}
+        >
+          <List className="size-3.5" />
+        </button>
+        <button
+          type="button"
+          onClick={() => setView("grid")}
+          title="Grid view"
+          className={`rounded-md border border-border p-1.5 transition-colors ${
+            view === "grid"
+              ? "bg-accent text-foreground"
+              : "text-muted-foreground hover:bg-accent/50"
+          }`}
+        >
+          <LayoutGrid className="size-3.5" />
+        </button>
+      </div>
+
+      <div
+        className={
+          view === "grid"
+            ? "grid grid-cols-1 gap-3 sm:grid-cols-2"
+            : "flex flex-col gap-3"
+        }
+      >
       {seasons.map((s) => {
         const sorted = [...s.members].sort(
           (a, b) => b.capitalResourcesLooted - a.capitalResourcesLooted
@@ -216,16 +251,24 @@ export function CapitalPanel({ refreshKey }: { refreshKey: number }) {
         ).length;
         const players = playerCount(s);
         return (
-          <Widget key={s.seasonId} title={`Raid weekend · ${date}`}>
-            <div
-              role="button"
-              tabIndex={0}
-              onClick={() => setOpen(s.seasonId)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") setOpen(s.seasonId);
-              }}
-              className="w-full cursor-pointer text-left outline-none"
-            >
+          <div
+            key={s.seasonId}
+            role="button"
+            tabIndex={0}
+            onClick={() => setOpen(s.seasonId)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                setOpen(s.seasonId);
+              }
+            }}
+            className="cursor-pointer outline-none"
+          >
+          <Widget
+            title={`Raid weekend · ${date}`}
+            className="h-full transition-colors hover:border-primary/50"
+          >
+            <div className="w-full text-left">
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
                 <span className="inline-flex items-center gap-1 font-semibold tabular-nums">
                   <StatIcon icon="capitalGold" size={15} />
@@ -458,8 +501,10 @@ export function CapitalPanel({ refreshKey }: { refreshKey: number }) {
               </DialogContent>
             </Dialog>
           </Widget>
+          </div>
         );
       })}
+      </div>
     </div>
   );
 }

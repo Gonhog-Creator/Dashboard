@@ -39,7 +39,7 @@ const DISCOVERY_TTL_MS = 60 * 60 * 1000;
 /** Discover calendar collection URLs under the principal (cached 1h — the
  * PROPFIND costs a roundtrip and the collection list almost never changes). */
 function discoverCalendars(): Promise<string[]> {
-  return cached("caldav:calendars", DISCOVERY_TTL_MS, discoverCalendarsUncached);
+  return cached("caldav:calendars:v2", DISCOVERY_TTL_MS, discoverCalendarsUncached);
 }
 
 async function discoverCalendarsUncached(): Promise<string[]> {
@@ -60,14 +60,26 @@ async function discoverCalendarsUncached(): Promise<string[]> {
   for (const base of candidates) {
     try {
       const xml = await caldavRequest("PROPFIND", base, body, "1");
-      const urls = [...xml.matchAll(/<[^>]*href[^>]*>([^<]+)<\/[^>]*href>/gi)]
-        .map((m) => m[1])
-        .filter((h) => /\/calendars?\//.test(h) && h.endsWith("/"));
-      if (urls.length) {
-        return urls.map((h) =>
-          h.startsWith("http") ? h : `https://caldav.icloud.com${h}`
+      // Only keep collections whose resourcetype is a CalDAV calendar —
+      // the home set, notification, and outbox collections also end in
+      // "/" but reject calendar-query REPORTs (403/404).
+      const urls: string[] = [];
+      for (const m of xml.matchAll(
+        /<[^>]*response[^>]*>([\s\S]*?)<\/[^>]*response>/gi
+      )) {
+        const block = m[1];
+        const href = block.match(/<[^>]*href[^>]*>([^<]+)<\/[^>]*href>/i)?.[1];
+        const rt = block.match(
+          /<[^>]*resourcetype[^>]*>([\s\S]*?)<\/[^>]*resourcetype>/i
+        )?.[1];
+        if (!href || !rt) continue;
+        if (!/<(?:[^>\s]*:)?calendar[\s/>]/i.test(rt)) continue;
+        if (!/\/calendars?\//.test(href) || !href.endsWith("/")) continue;
+        urls.push(
+          href.startsWith("http") ? href : `https://caldav.icloud.com${href}`
         );
       }
+      if (urls.length) return urls;
     } catch {
       // try next candidate
     }

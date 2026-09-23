@@ -265,9 +265,78 @@ export interface CocPlayerData {
   labels?: { name: string }[];
 }
 
+// ---------- Global rankings / leagues ----------
+
+export interface CocLocation {
+  id: number;
+  name: string;
+  isCountry: boolean;
+  countryCode?: string;
+}
+
+export interface CocRankedPlayer {
+  tag: string;
+  name: string;
+  expLevel: number;
+  trophies: number;
+  attackWins?: number;
+  defenseWins?: number;
+  rank: number;
+  previousRank?: number;
+  clan?: { tag: string; name: string; badgeUrls?: { small?: string } };
+  league?: { id: number; name: string; iconUrls?: { small?: string } };
+}
+
+export interface CocRankedClan {
+  tag: string;
+  name: string;
+  clanLevel: number;
+  clanPoints?: number;
+  clanBuilderBasePoints?: number;
+  clanCapitalPoints?: number;
+  capitalPoints?: number;
+  members?: number;
+  rank: number;
+  previousRank?: number;
+  badgeUrls?: { small?: string; medium?: string };
+  location?: { id: number; name: string };
+}
+
+export interface CocRankedBBPlayer {
+  tag: string;
+  name: string;
+  expLevel: number;
+  builderBaseTrophies: number;
+  builderBaseBattleWins?: number;
+  rank: number;
+  previousRank?: number;
+  clan?: { tag: string; name: string };
+  builderBaseLeague?: { id: number; name: string };
+}
+
+export interface CocLeague {
+  id: number;
+  name: string;
+  iconUrls?: { small?: string; tiny?: string; medium?: string };
+}
+
+export interface CocLegendEntry {
+  tag: string;
+  name: string;
+  expLevel: number;
+  trophies: number;
+  attackWins: number;
+  defenseWins: number;
+  rank: number;
+  clan?: { tag: string; name: string };
+}
+
 // ---------- Endpoint helpers ----------
 
 const enc = (tag: string) => encodeURIComponent(normalizeTag(tag));
+
+export const LEGEND_LEAGUE_ID = 29000022;
+export const GLOBAL_LOCATION_ID = 32000000;
 
 export const api = {
   clan: (tag: string) => cocFetch<CocClan>(`/clans/${enc(tag)}`),
@@ -297,4 +366,42 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ token }),
     }),
+
+  // Global statistics (ClashSpot-style leaderboards).
+  locations: () => cocFetch<{ items: CocLocation[] }>(`/locations`),
+  rankedPlayers: (loc: number, limit = 50) =>
+    cocFetch<{ items: CocRankedPlayer[] }>(
+      `/locations/${loc}/rankings/players?limit=${limit}`
+    ),
+  rankedClans: (loc: number, limit = 50) =>
+    cocFetch<{ items: CocRankedClan[] }>(
+      `/locations/${loc}/rankings/clans?limit=${limit}`
+    ),
+  rankedPlayersBB: (loc: number, limit = 25) =>
+    cocFetch<{ items: CocRankedBBPlayer[] }>(
+      `/locations/${loc}/rankings/players-builder-base?limit=${limit}`
+    ),
+  rankedClansBB: (loc: number, limit = 25) =>
+    cocFetch<{ items: CocRankedClan[] }>(
+      `/locations/${loc}/rankings/clans-builder-base?limit=${limit}`
+    ),
+  rankedCapitals: (loc: number, limit = 25) =>
+    cocFetch<{ items: CocRankedClan[] }>(
+      `/locations/${loc}/rankings/capitals?limit=${limit}`
+    ),
+  leagues: () => cocFetch<{ items: CocLeague[] }>(`/leagues`),
+  warLeagues: () =>
+    cocFetch<{ items: { id: number; name: string }[] }>(`/warleagues`),
+  capitalLeagues: () =>
+    cocFetch<{ items: { id: number; name: string }[] }>(`/capitalleagues`),
+  builderBaseLeagues: () =>
+    cocFetch<{ items: CocLeague[] }>(`/builderbaseleagues`),
+  legendSeasons: () =>
+    cocFetch<{ items: { id: string }[] }>(
+      `/leagues/${LEGEND_LEAGUE_ID}/seasons`
+    ),
+  legendSeason: (seasonId: string, limit = 50) =>
+    cocFetch<{ items: CocLegendEntry[] }>(
+      `/leagues/${LEGEND_LEAGUE_ID}/seasons/${seasonId}?limit=${limit}`
+    ),
 };

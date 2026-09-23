@@ -61,6 +61,7 @@ export function ScienceLabs() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(facilityId ? { facilityId } : {}),
     }).catch(() => {});
+    window.dispatchEvent(new Event("science:seen"));
   }, []);
 
   const selectFacility = useCallback(

@@ -42,6 +42,20 @@ export interface CocOverview {
     attacksUsed: number;
     attacksTotal: number;
     attacksLeft: string[]; // member names with unused attacks (live war only)
+    /** Our best hit: name = attacker, vs = defender. */
+    bestAttack: {
+      name: string;
+      vs: string;
+      stars: number;
+      destruction: number;
+    } | null;
+    /** Our best hold: name = our defender, vs = enemy attacker. */
+    bestDefense: {
+      name: string;
+      vs: string;
+      stars: number;
+      destruction: number;
+    } | null;
     endTime: string | null;
     startTime: string | null;
   } | null;
@@ -191,7 +205,7 @@ async function getOverviewUncached(): Promise<CocOverview> {
   // War: prefer the freshest stored row; overlay live state when active.
   const storedWar = await prisma.cocWar.findFirst({
     orderBy: { updatedAt: "desc" },
-    include: { attacks: { where: { isClanSide: true } } },
+    include: { attacks: true },
   });
   let war: CocOverview["war"] = null;
   try {
@@ -201,6 +215,53 @@ async function getOverviewUncached(): Promise<CocOverview> {
         live.clan.members?.reduce((n, m) => n + (m.attacks?.length ?? 0), 0) ??
         0;
       const apm = live.attacksPerMember ?? 1;
+      const oppName = new Map(
+        (live.opponent?.members ?? []).map((m) => [m.tag, m.name])
+      );
+      // Our best hit: most stars, then most destruction.
+      let bestAttack: {
+        name: string;
+        vs: string;
+        stars: number;
+        destruction: number;
+      } | null = null;
+      // Our best hold: enemy hit that earned the least.
+      let bestDefense: {
+        name: string;
+        vs: string;
+        stars: number;
+        destruction: number;
+      } | null = null;
+      for (const m of live.clan.members ?? []) {
+        for (const a of m.attacks ?? []) {
+          if (
+            !bestAttack ||
+            a.stars > bestAttack.stars ||
+            (a.stars === bestAttack.stars &&
+              a.destructionPercentage > bestAttack.destruction)
+          )
+            bestAttack = {
+              name: m.name,
+              vs: oppName.get(a.defenderTag) ?? "?",
+              stars: a.stars,
+              destruction: a.destructionPercentage,
+            };
+        }
+        const d = m.bestOpponentAttack;
+        if (
+          d &&
+          (!bestDefense ||
+            d.stars < bestDefense.stars ||
+            (d.stars === bestDefense.stars &&
+              d.destructionPercentage < bestDefense.destruction))
+        )
+          bestDefense = {
+            name: m.name,
+            vs: oppName.get(d.attackerTag) ?? "?",
+            stars: d.stars,
+            destruction: d.destructionPercentage,
+          };
+      }
       war = {
         state: live.state,
         opponent: live.opponent?.name ?? null,
@@ -217,6 +278,8 @@ async function getOverviewUncached(): Promise<CocOverview> {
                 .filter((m) => (m.attacks?.length ?? 0) < apm)
                 .map((m) => m.name)
             : [],
+        bestAttack,
+        bestDefense,
         endTime: parseCocTime(live.endTime)?.toISOString() ?? null,
         startTime: parseCocTime(live.startTime)?.toISOString() ?? null,
       };
@@ -225,6 +288,26 @@ async function getOverviewUncached(): Promise<CocOverview> {
     // private war log or API down — use stored
   }
   if (!war && storedWar && storedWar.state !== "notInWar") {
+    const ours = storedWar.attacks.filter((a) => a.isClanSide);
+    const theirs = storedWar.attacks.filter((a) => !a.isClanSide);
+    const bestAttack =
+      ours.length > 0
+        ? ours.reduce((b, a) =>
+            a.stars > b.stars ||
+            (a.stars === b.stars && a.destruction > b.destruction)
+              ? a
+              : b
+          )
+        : null;
+    const bestDefense =
+      theirs.length > 0
+        ? theirs.reduce((b, a) =>
+            a.stars < b.stars ||
+            (a.stars === b.stars && a.destruction < b.destruction)
+              ? a
+              : b
+          )
+        : null;
     war = {
       state: storedWar.state,
       opponent: storedWar.opponentName,
@@ -233,9 +316,25 @@ async function getOverviewUncached(): Promise<CocOverview> {
       opponentStars: storedWar.opponentStars,
       clanDestruction: storedWar.clanDestruction,
       opponentDestruction: storedWar.opponentDestruction,
-      attacksUsed: storedWar.attacks.length,
+      attacksUsed: ours.length,
       attacksTotal: storedWar.teamSize * storedWar.attacksPerMember,
       attacksLeft: [],
+      bestAttack: bestAttack
+        ? {
+            name: bestAttack.attackerName,
+            vs: bestAttack.defenderName,
+            stars: bestAttack.stars,
+            destruction: bestAttack.destruction,
+          }
+        : null,
+      bestDefense: bestDefense
+        ? {
+            name: bestDefense.defenderName,
+            vs: bestDefense.attackerName,
+            stars: bestDefense.stars,
+            destruction: bestDefense.destruction,
+          }
+        : null,
       endTime: storedWar.endTime?.toISOString() ?? null,
       startTime: storedWar.startTime?.toISOString() ?? null,
     };

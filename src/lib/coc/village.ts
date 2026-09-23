@@ -40,6 +40,11 @@ function nameOf(id: number): string {
   return DATA[id] ? cleanName(DATA[id][0]) : `Unknown ${id}`;
 }
 
+/** Raw gamedata lookup by internal id (army-link decoding, etc.). */
+export function gameItem(id: number): GameItem | null {
+  return info(id);
+}
+
 /** Highest level available at the given town hall (absolute max if ungated). */
 function maxLevelAt(id: number, th: number): number | null {
   const e = DATA[id];

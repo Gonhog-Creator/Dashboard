@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Users } from "lucide-react";
 import { StatIcon } from "./icons";
 import { Widget } from "@/components/layout/Widget";
+import { WarDetailDialog, type WarRow } from "./WarsPanel";
 
 interface Overview {
   configured: boolean;
@@ -37,6 +38,18 @@ interface Overview {
     attacksUsed: number;
     attacksTotal: number;
     attacksLeft: string[];
+    bestAttack: {
+      name: string;
+      vs: string;
+      stars: number;
+      destruction: number;
+    } | null;
+    bestDefense: {
+      name: string;
+      vs: string;
+      stars: number;
+      destruction: number;
+    } | null;
     endTime: string | null;
     startTime: string | null;
   } | null;
@@ -102,6 +115,8 @@ function warStateLabel(state: string) {
 
 export function OverviewPanel({ refreshKey }: { refreshKey: number }) {
   const [data, setData] = useState<Overview | null>(null);
+  const [wars, setWars] = useState<WarRow[] | null>(null);
+  const [openWar, setOpenWar] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
@@ -109,6 +124,10 @@ export function OverviewPanel({ refreshKey }: { refreshKey: number }) {
       .then((r) => r.json())
       .then(setData)
       .catch(() => setErr("failed to load"));
+    fetch("/api/coc/wars")
+      .then((r) => r.json())
+      .then(setWars)
+      .catch(() => setWars([]));
   }, [refreshKey]);
 
   if (err) return <p className="text-sm text-destructive">{err}</p>;
@@ -140,11 +159,35 @@ export function OverviewPanel({ refreshKey }: { refreshKey: number }) {
   }
 
   const { clan, war, me, pulse, season } = data;
-  const warWinning =
-    war &&
-    (war.clanStars > war.opponentStars ||
-      (war.clanStars === war.opponentStars &&
-        war.clanDestruction > war.opponentDestruction));
+
+  // The stored war matching the tile — drives the detail dialog + badges.
+  const matchedWar = war
+    ? (wars?.find((w) => w.opponentName === war.opponent) ??
+      wars?.[0] ??
+      null)
+    : null;
+  const warEnded = war
+    ? war.endTime
+      ? Date.parse(war.endTime) <= Date.now()
+      : war.state === "warEnded"
+    : false;
+  const warLive =
+    !!war &&
+    !warEnded &&
+    (war.state === "inWar" || war.state === "preparation");
+  const maxStars = (war?.teamSize ?? 0) * 3;
+
+  // Members with zero attacks — shown on the tile, not just the dialog.
+  // Stored-war roster is authoritative; fall back to the live API's
+  // attacksLeft names when no member detail was captured.
+  const didntAttack =
+    matchedWar && matchedWar.members.length > 0
+      ? matchedWar.members
+          .filter(
+            (m) => !matchedWar.attacks.some((a) => a.attackerTag === m.tag)
+          )
+          .map((m) => m.name)
+      : (war?.attacksLeft ?? []);
 
   const tiles: {
     label: string;
@@ -288,50 +331,169 @@ export function OverviewPanel({ refreshKey }: { refreshKey: number }) {
         )}
       </Widget>
 
-      <Widget title="Current war">
+      <div
+        role={war ? "button" : undefined}
+        tabIndex={war ? 0 : undefined}
+        onClick={() => matchedWar && setOpenWar(matchedWar.id)}
+        onKeyDown={(e) => {
+          if (
+            (e.key === "Enter" || e.key === " ") &&
+            matchedWar
+          ) {
+            e.preventDefault();
+            setOpenWar(matchedWar.id);
+          }
+        }}
+        className={war ? "cursor-pointer outline-none" : undefined}
+        title={war ? "Open war details" : undefined}
+      >
+      <Widget
+        title={warLive ? "Current war" : "Latest war"}
+        className={
+          warLive
+            ? "h-full border-green-500/60 shadow-[0_0_12px_-4px_var(--color-green-500)] transition-colors hover:border-primary/50"
+            : war
+              ? "h-full transition-colors hover:border-primary/50"
+              : undefined
+        }
+        action={
+          war ? (
+            warLive ? (
+              <span className="rounded bg-green-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-green-400">
+                Live
+              </span>
+            ) : (
+              <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold uppercase text-muted-foreground">
+                Ended
+              </span>
+            )
+          ) : undefined
+        }
+      >
         {war ? (
           <div className="flex flex-col gap-2">
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-muted-foreground">
+            {/* CoC-style matchup: badge — bar — score — bar — badge */}
+            <div className="flex items-center justify-center gap-2">
+              {matchedWar?.clanBadge && (
+                <StatIcon icon={matchedWar.clanBadge} size={30} />
+              )}
+              <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-muted">
+                <div
+                  className="ml-auto h-full rounded-full bg-blue-500 transition-all"
+                  style={{
+                    width: `${maxStars > 0 ? Math.min(100, (war.clanStars / maxStars) * 100) : 0}%`,
+                  }}
+                />
+              </div>
+              <span className="flex shrink-0 items-center gap-1 text-xl font-bold tabular-nums">
+                {war.clanStars}
+                <StatIcon icon="warStar" size={14} />
+                <span className="text-muted-foreground">–</span>
+                {war.opponentStars}
+                <StatIcon icon="warStar" size={14} />
+              </span>
+              <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-muted">
+                <div
+                  className="h-full rounded-full bg-red-500 transition-all"
+                  style={{
+                    width: `${maxStars > 0 ? Math.min(100, (war.opponentStars / maxStars) * 100) : 0}%`,
+                  }}
+                />
+              </div>
+              {matchedWar?.opponentBadge && (
+                <StatIcon icon={matchedWar.opponentBadge} size={30} />
+              )}
+            </div>
+            <div className="flex items-baseline justify-between gap-2 text-xs">
+              <span className="truncate font-medium">
+                {clan?.name ?? "Us"}
+              </span>
+              <span className="shrink-0 text-muted-foreground tabular-nums">
+                {maxStars > 0 && `of ${maxStars}★`}
+              </span>
+              <span className="truncate font-medium">
+                {war.opponent ?? "?"}
+              </span>
+            </div>
+
+            <div className="flex items-center justify-between text-xs text-muted-foreground">
+              <span>
                 {warStateLabel(war.state)} · {war.teamSize}v{war.teamSize}
               </span>
               {war.endTime && (
-                <span className="text-xs text-muted-foreground tabular-nums">
-                  ends {new Date(war.endTime).toLocaleString()}
+                <span className="tabular-nums">
+                  {warEnded ? "ended" : "ends"}{" "}
+                  {new Date(war.endTime).toLocaleString()}
                 </span>
               )}
-            </div>
-            <p className="text-sm">
-              vs <span className="font-medium">{war.opponent ?? "?"}</span>
-            </p>
-            <div className="flex items-baseline gap-2">
-              <span
-                className={`text-3xl font-bold tabular-nums ${
-                  warWinning ? "text-green-400" : "text-red-400"
-                }`}
-              >
-                {war.clanStars}
-              </span>
-              <span className="text-muted-foreground">
-                <StatIcon icon="warStar" size={16} /> —
-              </span>
-              <span className="text-3xl font-bold tabular-nums">
-                {war.opponentStars}
-              </span>
-              <span className="text-muted-foreground">
-                <StatIcon icon="warStar" size={16} />
-              </span>
             </div>
             <p className="text-xs text-muted-foreground tabular-nums">
               {war.clanDestruction.toFixed(1)}% vs{" "}
               {war.opponentDestruction.toFixed(1)}% destruction ·{" "}
-              {war.attacksUsed}/{war.attacksTotal} attacks used
+              {war.attacksUsed}/{war.attacksTotal} attacks
+              {warLive && war.attacksTotal - war.attacksUsed > 0 && (
+                <span className="text-amber-400">
+                  {" "}· {war.attacksTotal - war.attacksUsed} left
+                </span>
+              )}
             </p>
+            {(war.bestAttack || war.bestDefense) && (
+              <div className="grid grid-cols-2 gap-2 border-t border-border pt-2 text-xs">
+                {war.bestAttack && (
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                      Best attack
+                    </p>
+                    <p className="truncate font-medium">
+                      {war.bestAttack.name}
+                      <span className="ml-1 tabular-nums text-yellow-400">
+                        {war.bestAttack.stars}★
+                      </span>
+                      <span className="ml-1 tabular-nums text-muted-foreground">
+                        {war.bestAttack.destruction.toFixed(0)}%
+                      </span>
+                    </p>
+                    <p className="truncate text-muted-foreground">
+                      → {war.bestAttack.vs}
+                    </p>
+                  </div>
+                )}
+                {war.bestDefense && (
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                      Best defense
+                    </p>
+                    <p className="truncate font-medium">
+                      {war.bestDefense.name}
+                      <span className="ml-1 tabular-nums text-muted-foreground">
+                        held
+                      </span>
+                      <span className="ml-1 tabular-nums text-yellow-400">
+                        {war.bestDefense.stars}★
+                      </span>
+                      <span className="ml-1 tabular-nums text-muted-foreground">
+                        {war.bestDefense.destruction.toFixed(0)}%
+                      </span>
+                    </p>
+                    <p className="truncate text-muted-foreground">
+                      vs {war.bestDefense.vs}
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+            {didntAttack.length > 0 && (
+              <p className="rounded-md bg-amber-500/10 px-2 py-1 text-xs font-medium text-amber-400">
+                {warEnded ? "Didn\u2019t attack" : "Yet to attack"}:{" "}
+                {didntAttack.join(", ")}
+              </p>
+            )}
           </div>
         ) : (
           <p className="text-sm text-muted-foreground">Not in war.</p>
         )}
       </Widget>
+      </div>
 
       <Widget title="You">
         {me ? (
@@ -446,6 +608,11 @@ export function OverviewPanel({ refreshKey }: { refreshKey: number }) {
           Last poll {new Date(data.lastPollAt).toLocaleString()}
         </p>
       )}
+
+      <WarDetailDialog
+        war={wars?.find((w) => w.id === openWar) ?? null}
+        onClose={() => setOpenWar(null)}
+      />
     </div>
   );
 }

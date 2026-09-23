@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { Maximize2 } from "lucide-react";
 import { Widget } from "@/components/layout/Widget";
 import {
@@ -73,7 +73,7 @@ interface MemberAnalytics {
   detail: AttackDetail[];
 }
 
-interface WarRow {
+export interface WarRow {
   id: string;
   type: string;
   season: string | null;
@@ -515,45 +515,128 @@ function AnalyticsTable({
         </thead>
         <tbody>
           {rows.map((m) => (
-            <tr
-              key={m.tag}
-              onClick={() => onSelect(selected === m.tag ? null : m.tag)}
-              className={`cursor-pointer border-b border-border/40 last:border-0 hover:bg-accent/50 ${
-                selected === m.tag ? "bg-accent/40" : ""
-              }`}
-            >
-              <td className="px-2 py-1.5">
-                {m.name}
-                <span className="ml-1 text-[10px] text-muted-foreground">
-                  TH{m.townHall}
-                </span>
-              </td>
-              <td className="px-2 py-1.5 text-right tabular-nums">{m.wars}</td>
-              <td className="px-2 py-1.5 text-right tabular-nums">{m.attacks}</td>
-              <td className="px-2 py-1.5 text-right tabular-nums">
-                {m.hitRate != null ? `${Math.round(m.hitRate * 100)}%` : "—"}
-              </td>
-              <td className="px-2 py-1.5 text-right tabular-nums">
-                {m.avgStars.toFixed(2)}
-              </td>
-              <td className="px-2 py-1.5 text-right tabular-nums">
-                {Math.round(m.tripleRate * 100)}%
-              </td>
-              <td className="px-2 py-1.5 text-right tabular-nums">
-                {m.avgDestruction.toFixed(0)}%
-              </td>
-              <td className="px-2 py-1.5 text-right tabular-nums">
-                {fmtDur(m.avgDuration)}
-              </td>
-              <td className="px-2 py-1.5 text-right tabular-nums">
-                {m.defStars != null ? m.defStars.toFixed(2) : "—"}
-              </td>
-              <td className="px-2 py-1.5 text-right tabular-nums">
-                {m.defTripleRate != null
-                  ? `${Math.round(m.defTripleRate * 100)}%`
-                  : "—"}
-              </td>
-            </tr>
+            <Fragment key={m.tag}>
+              <tr
+                onClick={() => onSelect(selected === m.tag ? null : m.tag)}
+                className={`cursor-pointer border-b border-border/40 last:border-0 hover:bg-accent/50 ${
+                  selected === m.tag ? "bg-accent/40" : ""
+                }`}
+              >
+                <td className="px-2 py-1.5">
+                  {m.name}
+                  <span className="ml-1 text-[10px] text-muted-foreground">
+                    TH{m.townHall}
+                  </span>
+                </td>
+                <td className="px-2 py-1.5 text-right tabular-nums">{m.wars}</td>
+                <td className="px-2 py-1.5 text-right tabular-nums">
+                  {m.attacks}
+                </td>
+                <td className="px-2 py-1.5 text-right tabular-nums">
+                  {m.hitRate != null ? `${Math.round(m.hitRate * 100)}%` : "—"}
+                </td>
+                <td className="px-2 py-1.5 text-right tabular-nums">
+                  {m.avgStars.toFixed(2)}
+                </td>
+                <td className="px-2 py-1.5 text-right tabular-nums">
+                  {Math.round(m.tripleRate * 100)}%
+                </td>
+                <td className="px-2 py-1.5 text-right tabular-nums">
+                  {m.avgDestruction.toFixed(0)}%
+                </td>
+                <td className="px-2 py-1.5 text-right tabular-nums">
+                  {fmtDur(m.avgDuration)}
+                </td>
+                <td className="px-2 py-1.5 text-right tabular-nums">
+                  {m.defStars != null ? m.defStars.toFixed(2) : "—"}
+                </td>
+                <td className="px-2 py-1.5 text-right tabular-nums">
+                  {m.defTripleRate != null
+                    ? `${Math.round(m.defTripleRate * 100)}%`
+                    : "—"}
+                </td>
+              </tr>
+              {full && selected === m.tag && (
+                <tr className="border-b border-border/40 bg-accent/20">
+                  <td colSpan={10} className="px-2 py-2">
+                    {m.detail.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">
+                        No per-attack detail captured.
+                      </p>
+                    ) : (
+                      <table className="w-full text-xs">
+                        <thead className="text-muted-foreground">
+                          <tr className="border-b border-border/60 text-left">
+                            <th className="px-2 py-1 font-medium">War</th>
+                            <th className="px-2 py-1 font-medium">Date</th>
+                            <th className="px-2 py-1 text-right font-medium">
+                              Atk #
+                            </th>
+                            <th className="px-2 py-1 text-right font-medium">
+                              Stars
+                            </th>
+                            <th className="px-2 py-1 text-right font-medium">
+                              Destr
+                            </th>
+                            <th className="px-2 py-1 text-right font-medium">
+                              Time
+                            </th>
+                            <th className="px-2 py-1 font-medium">Defender</th>
+                            <th className="px-2 py-1 text-right font-medium">
+                              TH diff
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {m.detail.map((d, i) => (
+                            <tr
+                              key={i}
+                              className="border-b border-border/30 last:border-0"
+                            >
+                              <td className="px-2 py-1">{d.war}</td>
+                              <td className="px-2 py-1 text-muted-foreground tabular-nums">
+                                {d.ts
+                                  ? new Date(d.ts).toLocaleDateString()
+                                  : "—"}
+                              </td>
+                              <td className="px-2 py-1 text-right tabular-nums">
+                                {d.order}
+                              </td>
+                              <td className="px-2 py-1 text-right">
+                                <Stars n={d.stars} />
+                              </td>
+                              <td className="px-2 py-1 text-right tabular-nums">
+                                {d.destruction.toFixed(0)}%
+                              </td>
+                              <td className="px-2 py-1 text-right tabular-nums">
+                                {fmtDur(d.duration)}
+                              </td>
+                              <td className="px-2 py-1">
+                                {d.defenderName}
+                                <span className="ml-1 text-muted-foreground">
+                                  TH{d.defenderTH}
+                                </span>
+                              </td>
+                              <td
+                                className={`px-2 py-1 text-right tabular-nums ${
+                                  d.thDiff > 0
+                                    ? "text-green-400"
+                                    : d.thDiff < 0
+                                      ? "text-red-400"
+                                      : "text-muted-foreground"
+                                }`}
+                              >
+                                {d.thDiff > 0 ? `+${d.thDiff}` : d.thDiff}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </td>
+                </tr>
+              )}
+            </Fragment>
           ))}
         </tbody>
       </table>
@@ -561,7 +644,7 @@ function AnalyticsTable({
   );
 }
 
-function WarDetailDialog({
+export function WarDetailDialog({
   war,
   onClose,
 }: {

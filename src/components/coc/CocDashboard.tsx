@@ -9,6 +9,7 @@ import {
   Castle,
   User,
   TrendingUp,
+  Globe,
   RefreshCw,
   ExternalLink,
   Settings2,
@@ -21,6 +22,7 @@ import { WarsPanel } from "./WarsPanel";
 import { CapitalPanel } from "./CapitalPanel";
 import { MePanel } from "./MePanel";
 import { MetaPanel } from "./MetaPanel";
+import { GlobalPanel } from "./GlobalPanel";
 import { ConfigPanel } from "./ConfigPanel";
 
 const LINKS = [
@@ -36,6 +38,7 @@ const TABS = [
   { id: "capital", label: "Capital", icon: Castle },
   { id: "me", label: "Me", icon: User },
   { id: "meta", label: "Meta", icon: TrendingUp },
+  { id: "global", label: "Global", icon: Globe },
   { id: "config", label: "Config", icon: Settings2 },
 ];
 
@@ -121,6 +124,9 @@ export function CocDashboard() {
         </TabsContent>
         <TabsContent value="meta">
           <MetaPanel refreshKey={refreshKey} />
+        </TabsContent>
+        <TabsContent value="global">
+          <GlobalPanel refreshKey={refreshKey} />
         </TabsContent>
         <TabsContent value="config">
           <ConfigPanel refreshKey={refreshKey} />

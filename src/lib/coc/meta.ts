@@ -10,8 +10,101 @@
 
 import { prisma, ensureWal } from "@/lib/db";
 import { cached } from "@/lib/cache";
+import { gameItem, iconUrl } from "./village";
 
 const WR_BASE = "https://api.warreport.app";
+
+// ---- army share-code decoding ---------------------------------------------
+// Format: h<heroIdx>p<pet>e<eq>_<eq>-… i<cc troops> d<cc spells> u<troops> s<spells>
+// ids are offsets: troops +4_000_000, spells +26_000_000, heroes +28_000_000,
+// pets +73_000_000, equipment +90_000_000 → gamedata.json ids.
+
+const TROOP_BASE = 4_000_000;
+const SPELL_BASE = 26_000_000;
+const HERO_BASE = 28_000_000;
+const PET_BASE = 73_000_000;
+const EQ_BASE = 90_000_000;
+
+export interface MetaIcon {
+  name: string;
+  count: number;
+  icon: string | null;
+}
+
+export interface MetaArmyHero {
+  name: string;
+  icon: string | null;
+  pet: { name: string; icon: string | null } | null;
+  equipment: { name: string; icon: string | null }[];
+}
+
+export interface ArmyComposition {
+  troops: MetaIcon[]; // u — army camps
+  cc: MetaIcon[]; // i — clan castle / siege contents
+  spells: MetaIcon[]; // s — own spells
+  ccSpells: MetaIcon[]; // d — donated spells
+  heroes: MetaArmyHero[];
+}
+
+export function decodeArmy(code: string): ArmyComposition {
+  // Section letters never appear inside other sections' entries, so each
+  // letter's first occurrence marks its section start.
+  const marks = ["h", "i", "d", "u", "s"]
+    .map((l) => ({ l, i: code.indexOf(l) }))
+    .filter((m) => m.i >= 0)
+    .sort((a, b) => a.i - b.i);
+  const sec: Record<string, string> = {};
+  marks.forEach((m, k) => {
+    sec[m.l] = code.slice(m.i + 1, marks[k + 1]?.i ?? code.length);
+  });
+
+  const units = (
+    s: string | undefined,
+    base: number,
+    kind: "troop" | "spell"
+  ): MetaIcon[] =>
+    (s ?? "").split("-").flatMap((part) => {
+      const m = part.match(/^(\d+)x(\d+)$/);
+      if (!m) return [];
+      const it = gameItem(base + Number(m[2]));
+      return it
+        ? [{ name: it.name, count: Number(m[1]), icon: iconUrl(kind, it.name) }]
+        : [];
+    });
+
+  const heroes: MetaArmyHero[] = (sec.h ?? "").split("-").flatMap((part) => {
+    const m = part.match(/^(\d+)(?:p(\d+))?(?:e([\d_]+))?$/);
+    if (!m) return [];
+    const hero = gameItem(HERO_BASE + Number(m[1]));
+    if (!hero) return [];
+    const pet = m[2] ? gameItem(PET_BASE + Number(m[2])) : null;
+    const equipment = (m[3] ?? "")
+      .split("_")
+      .filter(Boolean)
+      .flatMap((e) => {
+        const it = gameItem(EQ_BASE + Number(e));
+        return it
+          ? [{ name: it.name, icon: iconUrl("equipment", it.name) }]
+          : [];
+      });
+    return [
+      {
+        name: hero.name,
+        icon: iconUrl("hero", hero.name),
+        pet: pet ? { name: pet.name, icon: iconUrl("pet", pet.name) } : null,
+        equipment,
+      },
+    ];
+  });
+
+  return {
+    troops: units(sec.u, TROOP_BASE, "troop"),
+    cc: units(sec.i, TROOP_BASE, "troop"),
+    spells: units(sec.s, SPELL_BASE, "spell"),
+    ccSpells: units(sec.d, SPELL_BASE, "spell"),
+    heroes,
+  };
+}
 
 export interface WrArmy {
   name: string;
@@ -113,10 +206,19 @@ export async function syncMeta(): Promise<string> {
 }
 
 export interface CocMetaData {
-  armies: WrArmy[];
-  heroes: WrHeroUsage[];
-  equipment: WrHeroEquipment[];
-  battleStats: WrBattleStatsDay | null;
+  armies: (WrArmy & { composition: ArmyComposition })[];
+  heroes: (WrHeroUsage & { icon: string | null })[];
+  equipment: (Omit<WrHeroEquipment, "equipment"> & {
+    heroIcon: string | null;
+    equipment: (WrHeroEquipment["equipment"][number] & {
+      icon: string | null;
+    })[];
+  })[];
+  battleStats:
+    | (Omit<WrBattleStatsDay, "armies"> & {
+        armies: (WrBattleStatsArmy & { composition: ArmyComposition })[];
+      })
+    | null;
   fetchedAt: string | null;
   attribution: string;
 }
@@ -160,10 +262,31 @@ async function getMetaUncached(): Promise<CocMetaData> {
   }
 
   return {
-    armies: armies ?? [],
-    heroes: heroes ?? [],
-    equipment: equipment ?? [],
-    battleStats: battleStats ?? null,
+    armies: (armies ?? []).map((a) => ({
+      ...a,
+      composition: decodeArmy(a.armyShareCode),
+    })),
+    heroes: (heroes ?? []).map((h) => ({
+      ...h,
+      icon: iconUrl("hero", h.name),
+    })),
+    equipment: (equipment ?? []).map((h) => ({
+      ...h,
+      heroIcon: iconUrl("hero", h.heroName),
+      equipment: h.equipment.map((e) => ({
+        ...e,
+        icon: iconUrl("equipment", e.name),
+      })),
+    })),
+    battleStats: battleStats
+      ? {
+          ...battleStats,
+          armies: battleStats.armies.map((a) => ({
+            ...a,
+            composition: decodeArmy(a.armyShareCode),
+          })),
+        }
+      : null,
     fetchedAt:
       latest.reduce<string | null>(
         (acc, r) => (r.fetchedAt.toISOString() > (acc ?? "") ? r.fetchedAt.toISOString() : acc),
