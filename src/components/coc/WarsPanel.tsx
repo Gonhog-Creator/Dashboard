@@ -48,6 +48,7 @@ interface AttackDetail {
   war: string;
   ts: string | null;
   order: number;
+  warMax: number;
   stars: number;
   destruction: number;
   duration: number | null;
@@ -510,7 +511,12 @@ function AnalyticsTable({
 /** Per-attack charts for one member — shared by widget preview and modal.
  *  `large` = 2×2 grid with taller charts (member detail modal). */
 function MemberCharts({ m, large = false }: { m: MemberAnalytics; large?: boolean }) {
-  const atk = m.detail.map((d, i) => ({ ...d, i: i + 1 }));
+  const atk = m.detail.map((d, i) => ({
+    ...d,
+    i: i + 1,
+    // order normalized to % of the war's attack pool (teamSize × per-member)
+    orderPct: d.warMax > 0 ? Math.round((d.order / d.warMax) * 100) : null,
+  }));
   const chartCls = large ? "h-44" : undefined;
   return (
     <div
@@ -538,26 +544,31 @@ function MemberCharts({ m, large = false }: { m: MemberAnalytics; large?: boolea
           </BarChart>
         </ResponsiveContainer>
       </MiniChart>
-      <MiniChart title="Attack order (timing)" chartClassName={chartCls}>
+      <MiniChart title="Attack timing (% of war)" chartClassName={chartCls}>
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={atk}>
             <XAxis dataKey="i" tick={{ fontSize: 9 }} />
             <YAxis
-              reversed
-              domain={[1, "auto"]}
+              domain={[0, 100]}
               tick={{ fontSize: 9 }}
-              width={18}
+              width={24}
+              tickFormatter={(v) => `${v}%`}
             />
             <Tooltip
               contentStyle={CHART_STYLE}
+              formatter={(v, _n, item) => [
+                `${v}% — #${item?.payload?.order} of ${item?.payload?.warMax}`,
+                "attack",
+              ]}
               labelFormatter={(i) => atk[(i as number) - 1]?.war ?? ""}
             />
             <Line
               type="monotone"
-              dataKey="order"
+              dataKey="orderPct"
               stroke="var(--primary)"
               dot={{ r: 2 }}
               strokeWidth={1.5}
+              connectNulls
             />
           </LineChart>
         </ResponsiveContainer>

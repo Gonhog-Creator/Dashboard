@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { LayoutGrid, List, Users } from "lucide-react";
 import { Widget } from "@/components/layout/Widget";
 import { StatIcon } from "./icons";
@@ -251,8 +251,8 @@ export function CapitalPanel({ refreshKey }: { refreshKey: number }) {
         ).length;
         const players = playerCount(s);
         return (
+          <Fragment key={s.seasonId}>
           <div
-            key={s.seasonId}
             role="button"
             tabIndex={0}
             onClick={() => setOpen(s.seasonId)}
@@ -298,6 +298,8 @@ export function CapitalPanel({ refreshKey }: { refreshKey: number }) {
                 )}
               </div>
             </div>
+          </Widget>
+          </div>
             <Dialog
               open={open === s.seasonId}
               onOpenChange={(o) => {
@@ -307,7 +309,7 @@ export function CapitalPanel({ refreshKey }: { refreshKey: number }) {
                 }
               }}
             >
-              <DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto">
+              <DialogContent className="max-h-[85vh] max-w-4xl overflow-y-auto">
                 <DialogHeader>
                   <DialogTitle>Raid weekend · {date}</DialogTitle>
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
@@ -341,7 +343,8 @@ export function CapitalPanel({ refreshKey }: { refreshKey: number }) {
                 </DialogHeader>
                 {sorted.length > 0 && (
               <div>
-                <div>
+                <div className="flex items-start gap-4">
+                <div className="min-w-0 flex-1">
                   <table className="w-full text-base">
                     <thead className="sticky top-0 bg-popover text-sm text-muted-foreground">
                       <tr className="border-b border-border text-left">
@@ -381,7 +384,7 @@ export function CapitalPanel({ refreshKey }: { refreshKey: number }) {
                             <td className="px-2 py-1">{m.name}</td>
                             <td
                               className={`px-2 py-1 text-right tabular-nums ${
-                                missed ? "text-amber-400" : ""
+                                missed ? "text-muted-foreground" : "text-green-400"
                               }`}
                             >
                               {m.attacks}/{limit}
@@ -412,7 +415,7 @@ export function CapitalPanel({ refreshKey }: { refreshKey: number }) {
                   </table>
                 </div>
                 {(s.attackLog.length > 0 || s.defenseLog.length > 0) && (
-                  <div className="mt-3 border-t border-border pt-2">
+                  <div className="w-64 shrink-0 border-l border-border pl-3">
                     <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
                       Districts
                     </p>
@@ -463,6 +466,7 @@ export function CapitalPanel({ refreshKey }: { refreshKey: number }) {
                     </div>
                   </div>
                 )}
+                </div>
                 {selMember && selName && (
                   <div className="mt-3">
                     <MiniChart title={`${selName} — loot per weekend`}>
@@ -500,8 +504,7 @@ export function CapitalPanel({ refreshKey }: { refreshKey: number }) {
                 )}
               </DialogContent>
             </Dialog>
-          </Widget>
-          </div>
+          </Fragment>
         );
       })}
       </div>

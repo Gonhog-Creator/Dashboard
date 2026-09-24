@@ -779,6 +779,7 @@ export async function getWarAnalytics() {
         select: {
           id: true,
           attacksPerMember: true,
+          teamSize: true,
           startTime: true,
           opponentName: true,
           type: true,
@@ -791,6 +792,7 @@ export async function getWarAnalytics() {
     war: string; // "CWL vs X" or "vs X"
     ts: string | null;
     order: number;
+    warMax: number; // teamSize * attacksPerMember — normalizes order across war sizes
     stars: number;
     destruction: number;
     duration: number | null;
@@ -862,6 +864,7 @@ export async function getWarAnalytics() {
       war: `${a.war.type === "cwl" ? "CWL vs" : "vs"} ${a.war.opponentName ?? "?"}`,
       ts: a.war.startTime?.toISOString() ?? null,
       order: a.order,
+      warMax: a.war.teamSize * a.war.attacksPerMember,
       stars: a.stars,
       destruction: a.destruction,
       duration: a.duration,
