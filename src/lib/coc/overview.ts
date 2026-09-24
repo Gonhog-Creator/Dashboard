@@ -897,7 +897,7 @@ export async function getWarAnalytics() {
 }
 
 /** Wars tab: stored wars with attack summaries + roster. */
-export async function getWars(limit = 30) {
+export async function getWars(limit = 200) {
   await ensureWal();
   const wars = await prisma.cocWar.findMany({
     orderBy: [{ startTime: "desc" }, { updatedAt: "desc" }],

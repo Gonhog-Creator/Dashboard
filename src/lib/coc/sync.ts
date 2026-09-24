@@ -175,6 +175,20 @@ export async function pollClan(): Promise<string> {
           if (!ours) continue;
           await captureWar(w, "cwl", group.season, wt);
           captured++;
+          // /currentwar mirrors the active CWL round and may have stored
+          // it as a regular war — drop the dupe (attacks cascade).
+          const wStart = parseCocTime(w.startTime);
+          if (wStart) {
+            await prisma.cocWar.deleteMany({
+              where: {
+                type: "regular",
+                startTime: wStart,
+                opponentTag: w.opponent?.tag
+                  ? normalizeTag(w.opponent.tag)
+                  : null,
+              },
+            });
+          }
         } catch {
           // warTag not yet available — fine, next poll gets it
         }
@@ -198,6 +212,16 @@ export async function captureWar(
 ) {
   const start = parseCocTime(war.startTime);
   const oppTag = war.opponent?.tag ? normalizeTag(war.opponent.tag) : null;
+
+  // During CWL, /currentwar returns the active league round — if that war
+  // is already stored as cwl, don't double-store it as regular.
+  if (!warTag && start) {
+    const cwlDup = await prisma.cocWar.findFirst({
+      where: { type: "cwl", startTime: start, opponentTag: oppTag },
+      select: { id: true },
+    });
+    if (cwlDup) return;
+  }
 
   // Regular wars have no warTag — find by (type, startTime, opponent).
   const existing = warTag

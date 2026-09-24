@@ -1,5 +1,11 @@
 import { ReactNode } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
 export function Widget({
@@ -9,7 +15,7 @@ export function Widget({
   className,
   contentClassName,
 }: {
-  title?: string;
+  title?: ReactNode;
   action?: ReactNode;
   children: ReactNode;
   className?: string;
@@ -18,11 +24,11 @@ export function Widget({
   return (
     <Card className={cn("flex flex-col", className)}>
       {title && (
-        <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
+        <CardHeader className="items-center space-y-0 pb-2">
           <CardTitle className="text-sm font-medium text-muted-foreground">
             {title}
           </CardTitle>
-          {action}
+          {action && <CardAction>{action}</CardAction>}
         </CardHeader>
       )}
       <CardContent className={cn("flex-1", contentClassName)}>

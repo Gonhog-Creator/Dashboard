@@ -119,6 +119,12 @@
   --sidebar-ring: oklch(0.72 0.14 210);
 }
 
+/* Scoped contrast test: brighter muted text on the CoC page only.
+   If it reads well, promote this value to .dark site-wide. */
+.coc-theme {
+  --muted-foreground: oklch(0.78 0.012 260);
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

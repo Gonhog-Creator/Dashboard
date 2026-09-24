@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Users } from "lucide-react";
+import { Check, Users } from "lucide-react";
 import { StatIcon } from "./icons";
 import { Widget } from "@/components/layout/Widget";
 import { WarDetailDialog, type WarRow } from "./WarsPanel";
@@ -87,6 +87,30 @@ interface Overview {
   season: { startTime: string | null; endTime: string | null } | null;
 }
 
+interface GamesSeason {
+  season: string;
+  start: string;
+  end: string;
+  total: number;
+  cappedCount: number;
+  members: {
+    tag: string;
+    name: string;
+    inClan: boolean;
+    points: number;
+    capped: boolean;
+    partial: boolean;
+  }[];
+}
+
+interface ClanGames {
+  phase: "active" | "ended" | "upcoming";
+  season: GamesSeason | null;
+  nextStart: string;
+  cap: number;
+  history: GamesSeason[];
+}
+
 /** "2d 4h" / "5h 12m" / "43m" remaining until an ISO timestamp. */
 function fmtRemaining(iso: string) {
   const ms = Date.parse(iso) - Date.now();
@@ -116,6 +140,7 @@ function warStateLabel(state: string) {
 export function OverviewPanel({ refreshKey }: { refreshKey: number }) {
   const [data, setData] = useState<Overview | null>(null);
   const [wars, setWars] = useState<WarRow[] | null>(null);
+  const [games, setGames] = useState<ClanGames | null>(null);
   const [openWar, setOpenWar] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
@@ -128,6 +153,10 @@ export function OverviewPanel({ refreshKey }: { refreshKey: number }) {
       .then((r) => r.json())
       .then(setWars)
       .catch(() => setWars([]));
+    fetch("/api/coc/games")
+      .then((r) => r.json())
+      .then(setGames)
+      .catch(() => setGames(null));
   }, [refreshKey]);
 
   if (err) return <p className="text-sm text-destructive">{err}</p>;
@@ -161,33 +190,42 @@ export function OverviewPanel({ refreshKey }: { refreshKey: number }) {
   const { clan, war, me, pulse, season } = data;
 
   // The stored war matching the tile — drives the detail dialog + badges.
+  // Match on opponent AND (still open or same end time); only fall back to
+  // the newest stored war once this one has ended, otherwise a live war in
+  // preparation would open the previous war's details.
   const matchedWar = war
-    ? (wars?.find((w) => w.opponentName === war.opponent) ??
-      wars?.[0] ??
-      null)
+    ? (wars?.find(
+        (w) =>
+          w.opponentName === war.opponent &&
+          (w.state !== "warEnded" ||
+            (war.endTime != null && w.endTime === war.endTime))
+      ) ??
+      (war.state === "warEnded" ? (wars?.[0] ?? null) : null))
     : null;
   const warEnded = war
     ? war.endTime
       ? Date.parse(war.endTime) <= Date.now()
       : war.state === "warEnded"
     : false;
-  const warLive =
-    !!war &&
-    !warEnded &&
-    (war.state === "inWar" || war.state === "preparation");
+  const warPreparing = !!war && !warEnded && war.state === "preparation";
+  const warLive = !!war && !warEnded && war.state === "inWar";
+  const warActive = warLive || warPreparing;
   const maxStars = (war?.teamSize ?? 0) * 3;
 
   // Members with zero attacks — shown on the tile, not just the dialog.
   // Stored-war roster is authoritative; fall back to the live API's
-  // attacksLeft names when no member detail was captured.
+  // attacksLeft names when no member detail was captured. Skipped during
+  // preparation — nobody can attack yet, so everyone would show as missing.
   const didntAttack =
-    matchedWar && matchedWar.members.length > 0
-      ? matchedWar.members
-          .filter(
-            (m) => !matchedWar.attacks.some((a) => a.attackerTag === m.tag)
-          )
-          .map((m) => m.name)
-      : (war?.attacksLeft ?? []);
+    war && war.state !== "preparation"
+      ? matchedWar && matchedWar.members.length > 0
+        ? matchedWar.members
+            .filter(
+              (m) => !matchedWar.attacks.some((a) => a.attackerTag === m.tag)
+            )
+            .map((m) => m.name)
+        : (war?.attacksLeft ?? [])
+      : [];
 
   const tiles: {
     label: string;
@@ -243,6 +281,14 @@ export function OverviewPanel({ refreshKey }: { refreshKey: number }) {
       icon: "xp",
       value: `${pulse.upgrades.total}`,
       sub: `top +${pulse.upgrades.value}`,
+    });
+  if (games?.phase === "active" && games.season)
+    tiles.push({
+      label: "Clan games · live",
+      name: `${games.season.cappedCount} completed`,
+      icon: "gems",
+      value: games.season.total.toLocaleString(),
+      sub: "clan points",
     });
   if (war && war.state === "inWar" && war.attacksLeft.length > 0)
     tiles.push({
@@ -332,8 +378,8 @@ export function OverviewPanel({ refreshKey }: { refreshKey: number }) {
       </Widget>
 
       <div
-        role={war ? "button" : undefined}
-        tabIndex={war ? 0 : undefined}
+        role={matchedWar ? "button" : undefined}
+        tabIndex={matchedWar ? 0 : undefined}
         onClick={() => matchedWar && setOpenWar(matchedWar.id)}
         onKeyDown={(e) => {
           if (
@@ -344,23 +390,29 @@ export function OverviewPanel({ refreshKey }: { refreshKey: number }) {
             setOpenWar(matchedWar.id);
           }
         }}
-        className={war ? "cursor-pointer outline-none" : undefined}
-        title={war ? "Open war details" : undefined}
+        className={matchedWar ? "cursor-pointer outline-none" : undefined}
+        title={matchedWar ? "Open war details" : undefined}
       >
       <Widget
-        title={warLive ? "Current war" : "Latest war"}
+        title={warActive ? "Current war" : "Latest war"}
         className={
           warLive
             ? "h-full border-green-500/60 shadow-[0_0_12px_-4px_var(--color-green-500)] transition-colors hover:border-primary/50"
-            : war
-              ? "h-full transition-colors hover:border-primary/50"
-              : undefined
+            : warPreparing
+              ? "h-full border-amber-500/60 shadow-[0_0_12px_-4px_var(--color-amber-500)] transition-colors hover:border-primary/50"
+              : war
+                ? "h-full transition-colors hover:border-primary/50"
+                : undefined
         }
         action={
           war ? (
             warLive ? (
               <span className="rounded bg-green-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-green-400">
                 Live
+              </span>
+            ) : warPreparing ? (
+              <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-amber-400">
+                Preparation
               </span>
             ) : (
               <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold uppercase text-muted-foreground">
@@ -417,16 +469,33 @@ export function OverviewPanel({ refreshKey }: { refreshKey: number }) {
             </div>
 
             <div className="flex items-center justify-between text-xs text-muted-foreground">
-              <span>
+              <span
+                className={
+                  warPreparing
+                    ? "text-sm font-semibold text-amber-400"
+                    : undefined
+                }
+              >
                 {warStateLabel(war.state)} · {war.teamSize}v{war.teamSize}
               </span>
-              {war.endTime && (
+              {warPreparing && war.startTime ? (
+                <span className="tabular-nums">
+                  battle starts{" "}
+                  {new Date(war.startTime).toLocaleString()}
+                </span>
+              ) : war.endTime ? (
                 <span className="tabular-nums">
                   {warEnded ? "ended" : "ends"}{" "}
                   {new Date(war.endTime).toLocaleString()}
                 </span>
-              )}
+              ) : null}
             </div>
+            {warPreparing && war.startTime && (
+              <p className="rounded-md bg-amber-500/10 px-2 py-1.5 text-center text-sm font-semibold text-amber-400">
+                Preparation day — battle begins in{" "}
+                {fmtRemaining(war.startTime)}
+              </p>
+            )}
             <p className="text-xs text-muted-foreground tabular-nums">
               {war.clanDestruction.toFixed(1)}% vs{" "}
               {war.opponentDestruction.toFixed(1)}% destruction ·{" "}
@@ -600,6 +669,127 @@ export function OverviewPanel({ refreshKey }: { refreshKey: number }) {
               </div>
             ))}
           </div>
+        </Widget>
+      )}
+
+      {games && (
+        <Widget
+          title={
+            games.season
+              ? `Clan games · ${games.season.season}`
+              : "Clan games"
+          }
+          className="md:col-span-2 xl:col-span-3"
+          action={
+            games.phase === "active" ? (
+              <span className="rounded bg-green-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-green-400">
+                Live · ends in {fmtRemaining(games.season!.end)}
+              </span>
+            ) : games.phase === "ended" ? (
+              <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold uppercase text-muted-foreground">
+                Ended
+              </span>
+            ) : (
+              <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold uppercase text-muted-foreground">
+                Starts in {fmtRemaining(games.nextStart)}
+              </span>
+            )
+          }
+        >
+          {games.season ? (
+            <div className="flex flex-col gap-3">
+              <div className="flex flex-wrap items-baseline gap-x-6 gap-y-1">
+                <span>
+                  <span className="text-lg font-bold tabular-nums">
+                    {games.season.total.toLocaleString()}
+                  </span>
+                  <span className="ml-1 text-sm text-muted-foreground">
+                    clan points
+                  </span>
+                </span>
+                <span>
+                  <span className="text-lg font-bold tabular-nums">
+                    {games.season.cappedCount}
+                  </span>
+                  <span className="ml-1 text-sm text-muted-foreground">
+                    of {games.season.members.length} completed (
+                    {games.cap.toLocaleString()})
+                  </span>
+                </span>
+                {games.phase === "ended" && (
+                  <span className="text-xs text-muted-foreground">
+                    next games{" "}
+                    {new Date(games.nextStart).toLocaleDateString()}
+                  </span>
+                )}
+              </div>
+              <div className="grid max-h-72 grid-cols-1 gap-x-6 gap-y-1.5 overflow-y-auto sm:grid-cols-2 xl:grid-cols-3">
+                {games.season.members.map((m) => (
+                  <div key={m.tag} className="flex items-center gap-2 text-xs">
+                    <span
+                      className={`w-28 truncate ${
+                        m.inClan ? "" : "text-muted-foreground line-through"
+                      }`}
+                      title={m.name}
+                    >
+                      {m.name}
+                    </span>
+                    <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
+                      <div
+                        className={`h-full rounded-full ${
+                          m.capped ? "bg-green-500" : "bg-primary"
+                        }`}
+                        style={{
+                          width: `${Math.min(100, (m.points / games.cap) * 100)}%`,
+                        }}
+                      />
+                    </div>
+                    <span className="w-14 shrink-0 text-right tabular-nums">
+                      {m.points.toLocaleString()}
+                      {m.partial && (
+                        <span
+                          className="text-muted-foreground"
+                          title="Joined mid-games — actual points may be higher"
+                        >
+                          ~
+                        </span>
+                      )}
+                    </span>
+                    {m.capped && (
+                      <Check className="size-3.5 shrink-0 text-green-400" />
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              Next games start{" "}
+              <span className="font-medium text-foreground">
+                {new Date(games.nextStart).toLocaleDateString()}
+              </span>{" "}
+              ({fmtRemaining(games.nextStart)}). Points appear here once the
+              first snapshot during games lands.
+            </p>
+          )}
+          {games.history.length > 0 && (
+            <div className="mt-3 border-t border-border pt-2">
+              <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                History
+              </p>
+              <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-muted-foreground">
+                {games.history.map((h) => (
+                  <span key={h.season} className="tabular-nums">
+                    {h.season}:{" "}
+                    <span className="text-foreground">
+                      {h.total.toLocaleString()}
+                    </span>{" "}
+                    pts · {h.cappedCount} completed
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
         </Widget>
       )}
 

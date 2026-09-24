@@ -7,6 +7,7 @@ import "./financeSyncJob";
 import "./financeSnapshotJob";
 import "./cocPollJob";
 import "./cocSnapshotJob";
+import "./cocGamesJob";
 import "./cocMetaJob";
 
 export { startScheduler, runJob, listRegisteredJobs } from "./scheduler";

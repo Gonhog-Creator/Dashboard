@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Maximize2 } from "lucide-react";
 import { Widget } from "@/components/layout/Widget";
 import {
@@ -117,9 +117,11 @@ const CHART_STYLE = {
 
 function MiniChart({
   title,
+  chartClassName = "h-28",
   children,
 }: {
   title: string;
+  chartClassName?: string;
   children: React.ReactNode;
 }) {
   return (
@@ -127,7 +129,7 @@ function MiniChart({
       <p className="mb-1 text-[10px] font-medium text-muted-foreground">
         {title}
       </p>
-      <div className="h-28">{children}</div>
+      <div className={chartClassName}>{children}</div>
     </div>
   );
 }
@@ -181,8 +183,8 @@ export function WarsPanel({ refreshKey }: { refreshKey: number }) {
   const [cwl, setCwl] = useState<CwlSeason | null>(null);
   const [open, setOpen] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
-  const [filter, setFilter] = useState<"all" | "regular" | "cwl">("all");
   const [tableFull, setTableFull] = useState(false);
+  const [memberDetail, setMemberDetail] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/coc/wars")
@@ -237,7 +239,6 @@ export function WarsPanel({ refreshKey }: { refreshKey: number }) {
           {(() => {
             const sel = analytics.find((m) => m.tag === selected);
             if (!sel || sel.detail.length === 0) return null;
-            const atk = sel.detail.map((d, i) => ({ ...d, i: i + 1 }));
             return (
               <div className="mb-3">
                 <p className="mb-2 text-xs font-medium">
@@ -246,98 +247,7 @@ export function WarsPanel({ refreshKey }: { refreshKey: number }) {
                     TH{sel.townHall} · {sel.attacks} attacks
                   </span>
                 </p>
-                <div className="grid grid-cols-2 gap-2 xl:grid-cols-4">
-                  <MiniChart title="Stars per attack">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={atk}>
-                        <XAxis dataKey="i" tick={{ fontSize: 9 }} />
-                        <YAxis
-                          domain={[0, 3]}
-                          ticks={[0, 1, 2, 3]}
-                          tick={{ fontSize: 9 }}
-                          width={18}
-                        />
-                        <Tooltip
-                          contentStyle={CHART_STYLE}
-                          labelFormatter={(i) =>
-                            `${atk[(i as number) - 1]?.war ?? ""} → ${
-                              atk[(i as number) - 1]?.defenderName ?? ""
-                            }`
-                          }
-                        />
-                        <Bar dataKey="stars" fill="#eab308" />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </MiniChart>
-                  <MiniChart title="Attack order (timing)">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={atk}>
-                        <XAxis dataKey="i" tick={{ fontSize: 9 }} />
-                        <YAxis
-                          reversed
-                          domain={[1, "auto"]}
-                          tick={{ fontSize: 9 }}
-                          width={18}
-                        />
-                        <Tooltip
-                          contentStyle={CHART_STYLE}
-                          labelFormatter={(i) => atk[(i as number) - 1]?.war ?? ""}
-                        />
-                        <Line
-                          type="monotone"
-                          dataKey="order"
-                          stroke="var(--primary)"
-                          dot={{ r: 2 }}
-                          strokeWidth={1.5}
-                        />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </MiniChart>
-                  <MiniChart title="Attack duration (s)">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={atk}>
-                        <XAxis dataKey="i" tick={{ fontSize: 9 }} />
-                        <YAxis tick={{ fontSize: 9 }} width={28} />
-                        <Tooltip
-                          contentStyle={CHART_STYLE}
-                          formatter={(v) => [fmtDur(v as number), "duration"]}
-                          labelFormatter={(i) => atk[(i as number) - 1]?.war ?? ""}
-                        />
-                        <Bar dataKey="duration" fill="#22c55e" />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </MiniChart>
-                  <MiniChart title="Matchup (TH diff → stars)">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <ScatterChart>
-                        <XAxis
-                          dataKey="thDiff"
-                          type="number"
-                          tick={{ fontSize: 9 }}
-                          name="TH diff"
-                        />
-                        <YAxis
-                          dataKey="stars"
-                          type="number"
-                          domain={[0, 3]}
-                          ticks={[0, 1, 2, 3]}
-                          tick={{ fontSize: 9 }}
-                          width={18}
-                        />
-                        <Tooltip
-                          contentStyle={CHART_STYLE}
-                          cursor={{ strokeDasharray: "3 3" }}
-                          formatter={(v, name) =>
-                            name === "TH diff"
-                              ? [v as number, "TH diff"]
-                              : [v as number, "stars"]
-                          }
-                        />
-                        <Scatter data={atk} fill="#a855f7" />
-                      </ScatterChart>
-                    </ResponsiveContainer>
-                  </MiniChart>
-                </div>
+                <MemberCharts m={sel} />
               </div>
             );
           })()}
@@ -370,102 +280,136 @@ export function WarsPanel({ refreshKey }: { refreshKey: number }) {
           exposes clan-level results.
         </p>
       )}
-      {wars.length > 1 && (
-        <div className="flex gap-1.5">
+      {wars.length > 0 && (
+        <div className="grid grid-cols-1 items-start gap-3 lg:grid-cols-2">
           {(
             [
-              ["all", "All"],
-              ["regular", "Regular"],
+              ["regular", "Regular wars"],
               ["cwl", "CWL"],
             ] as const
-          ).map(([f, label]) => (
-            <button
-              key={f}
-              onClick={() => setFilter(f)}
-              className={`rounded-md border px-2.5 py-1 text-xs font-medium transition-colors ${
-                filter === f
-                  ? "border-primary bg-primary/10 text-primary"
-                  : "border-border text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              {label}
-            </button>
-          ))}
+          ).map(([type, heading]) => {
+            const list = wars.filter((w) => w.type === type);
+            return (
+              <div key={type} className="flex flex-col gap-3">
+                <p className="text-center text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                  {heading}
+                </p>
+                {list.length === 0 && (
+                  <p className="text-sm text-muted-foreground">
+                    {type === "cwl"
+                      ? "No CWL rounds captured yet."
+                      : "No regular wars captured yet."}
+                  </p>
+                )}
+                {list.map((w) => (
+                  <WarCard key={w.id} war={w} onOpen={() => setOpen(w.id)} />
+                ))}
+              </div>
+            );
+          })}
         </div>
       )}
-      {wars
-        .filter((w) => filter === "all" || w.type === filter)
-        .map((w) => {
-        const triples = w.attacks.filter((a) => a.stars === 3).length;
-        const avgStars =
-          w.attacks.length > 0
-            ? w.attacks.reduce((s, a) => s + a.stars, 0) / w.attacks.length
-            : 0;
-        return (
-          <div
-            key={w.id}
-            role="button"
-            tabIndex={0}
-            onClick={() => setOpen(w.id)}
-            onKeyDown={(e) => e.key === "Enter" && setOpen(w.id)}
-            className="cursor-pointer rounded-xl outline-none transition-colors hover:bg-accent/30"
-          >
-            <Widget
-              title={
-                `${w.type === "cwl" ? "CWL " : ""}vs ${w.opponentName ?? "?"}` +
-                (w.season ? ` · ${w.season}` : "")
-              }
-            >
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
-                {w.opponentBadge && (
-                  <StatIcon icon={w.opponentBadge} size={22} />
-                )}
-                <ResultBadge result={w.result} state={w.state} />
-                {w.type === "cwl" && (
-                  <span className="rounded bg-purple-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-purple-400">
-                    CWL
-                  </span>
-                )}
-                <span className="tabular-nums font-semibold">
-                  {w.clanStars}★ – {w.opponentStars}★
-                </span>
-                <span className="text-xs text-muted-foreground tabular-nums">
-                  {w.clanDestruction.toFixed(1)}% /{" "}
-                  {w.opponentDestruction.toFixed(1)}%
-                </span>
-                <span className="text-xs text-muted-foreground">
-                  {w.teamSize}v{w.teamSize} · {w.attacks.length} attacks ·{" "}
-                  {triples} triples · avg {avgStars.toFixed(2)}★
-                </span>
-                {w.startTime && (
-                  <span className="ml-auto text-xs text-muted-foreground">
-                    {new Date(w.startTime).toLocaleDateString()}
-                  </span>
-                )}
-              </div>
-            </Widget>
-          </div>
-        );
-      })}
 
       <Dialog open={tableFull} onOpenChange={setTableFull}>
-        <DialogContent className="max-h-[90vh] max-w-5xl overflow-y-auto">
+        <DialogContent className="max-h-[92vh] w-[95vw] max-w-[95vw] overflow-auto sm:max-w-[95vw]">
           <DialogHeader>
             <DialogTitle>Member war analytics</DialogTitle>
           </DialogHeader>
           <AnalyticsTable
             rows={sortedAnalytics}
-            selected={selected}
-            onSelect={setSelected}
+            selected={memberDetail}
+            onSelect={setMemberDetail}
             full
           />
         </DialogContent>
       </Dialog>
 
+      <MemberDetailDialog
+        member={analytics?.find((m) => m.tag === memberDetail) ?? null}
+        onClose={() => setMemberDetail(null)}
+      />
+
       <WarDetailDialog
         war={wars.find((w) => w.id === open) ?? null}
         onClose={() => setOpen(null)}
       />
+    </div>
+  );
+}
+
+/** Diagonal bottom-right tint by war result (hard 50% split). */
+const RESULT_GRADIENT: Record<string, string> = {
+  win: "bg-[linear-gradient(to_bottom_right,var(--card)_50%,rgba(74,222,128,0.25)_50%)]",
+  lose: "bg-[linear-gradient(to_bottom_right,var(--card)_50%,rgba(248,113,113,0.25)_50%)]",
+  tie: "bg-[linear-gradient(to_bottom_right,var(--card)_50%,rgba(250,204,21,0.25)_50%)]",
+};
+
+function WarCard({ war: w, onOpen }: { war: WarRow; onOpen: () => void }) {
+  const triples = w.attacks.filter((a) => a.stars === 3).length;
+  const avgStars =
+    w.attacks.length > 0
+      ? w.attacks.reduce((s, a) => s + a.stars, 0) / w.attacks.length
+      : 0;
+  // clanAttacks covers warlog-backfilled wars that have no attack rows.
+  const attacksUsed = w.clanAttacks || w.attacks.length;
+  const attacksMax = w.teamSize * w.attacksPerMember;
+  const allDone = attacksMax > 0 && attacksUsed >= attacksMax;
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={onOpen}
+      onKeyDown={(e) => e.key === "Enter" && onOpen()}
+      className="cursor-pointer rounded-xl outline-none transition-colors hover:bg-accent/30"
+    >
+      <Widget
+        className={w.result ? RESULT_GRADIENT[w.result] : undefined}
+        title={
+          <span className="flex items-center gap-2">
+            {w.type === "cwl" ? "CWL " : ""}vs {w.opponentName ?? "?"}
+            <ResultBadge result={w.result} state={w.state} />
+          </span>
+        }
+        action={
+          attacksMax > 0 ? (
+            <span
+              className={`text-lg font-bold leading-none tabular-nums ${
+                allDone ? "text-green-400" : ""
+              }`}
+              title={`${attacksUsed} of ${attacksMax} attacks used`}
+            >
+              {attacksUsed}
+              <span className="text-sm font-medium text-muted-foreground">
+                /{attacksMax}
+              </span>
+            </span>
+          ) : undefined
+        }
+      >
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+          {w.opponentBadge && <StatIcon icon={w.opponentBadge} size={22} />}
+          {w.type === "cwl" && (
+            <span className="rounded bg-purple-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-purple-400">
+              CWL
+            </span>
+          )}
+          <span className="tabular-nums font-semibold">
+            {w.clanStars}★ – {w.opponentStars}★
+          </span>
+          <span className="text-xs text-muted-foreground tabular-nums">
+            {w.clanDestruction.toFixed(1)}% / {w.opponentDestruction.toFixed(1)}%
+          </span>
+          <span className="text-xs text-muted-foreground">
+            {w.teamSize}v{w.teamSize} · {w.attacks.length} attacks · {triples}{" "}
+            triples · avg {avgStars.toFixed(2)}★
+          </span>
+          {w.startTime && (
+            <span className="ml-auto text-xs text-muted-foreground">
+              {new Date(w.startTime).toLocaleDateString()}
+            </span>
+          )}
+        </div>
+      </Widget>
     </div>
   );
 }
@@ -515,13 +459,13 @@ function AnalyticsTable({
         </thead>
         <tbody>
           {rows.map((m) => (
-            <Fragment key={m.tag}>
-              <tr
-                onClick={() => onSelect(selected === m.tag ? null : m.tag)}
-                className={`cursor-pointer border-b border-border/40 last:border-0 hover:bg-accent/50 ${
-                  selected === m.tag ? "bg-accent/40" : ""
-                }`}
-              >
+            <tr
+              key={m.tag}
+              onClick={() => onSelect(selected === m.tag ? null : m.tag)}
+              className={`cursor-pointer border-b border-border/40 last:border-0 hover:bg-accent/50 ${
+                selected === m.tag ? "bg-accent/40" : ""
+              }`}
+            >
                 <td className="px-2 py-1.5">
                   {m.name}
                   <span className="ml-1 text-[10px] text-muted-foreground">
@@ -555,92 +499,226 @@ function AnalyticsTable({
                     ? `${Math.round(m.defTripleRate * 100)}%`
                     : "—"}
                 </td>
-              </tr>
-              {full && selected === m.tag && (
-                <tr className="border-b border-border/40 bg-accent/20">
-                  <td colSpan={10} className="px-2 py-2">
-                    {m.detail.length === 0 ? (
-                      <p className="text-xs text-muted-foreground">
-                        No per-attack detail captured.
-                      </p>
-                    ) : (
-                      <table className="w-full text-xs">
-                        <thead className="text-muted-foreground">
-                          <tr className="border-b border-border/60 text-left">
-                            <th className="px-2 py-1 font-medium">War</th>
-                            <th className="px-2 py-1 font-medium">Date</th>
-                            <th className="px-2 py-1 text-right font-medium">
-                              Atk #
-                            </th>
-                            <th className="px-2 py-1 text-right font-medium">
-                              Stars
-                            </th>
-                            <th className="px-2 py-1 text-right font-medium">
-                              Destr
-                            </th>
-                            <th className="px-2 py-1 text-right font-medium">
-                              Time
-                            </th>
-                            <th className="px-2 py-1 font-medium">Defender</th>
-                            <th className="px-2 py-1 text-right font-medium">
-                              TH diff
-                            </th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {m.detail.map((d, i) => (
-                            <tr
-                              key={i}
-                              className="border-b border-border/30 last:border-0"
-                            >
-                              <td className="px-2 py-1">{d.war}</td>
-                              <td className="px-2 py-1 text-muted-foreground tabular-nums">
-                                {d.ts
-                                  ? new Date(d.ts).toLocaleDateString()
-                                  : "—"}
-                              </td>
-                              <td className="px-2 py-1 text-right tabular-nums">
-                                {d.order}
-                              </td>
-                              <td className="px-2 py-1 text-right">
-                                <Stars n={d.stars} />
-                              </td>
-                              <td className="px-2 py-1 text-right tabular-nums">
-                                {d.destruction.toFixed(0)}%
-                              </td>
-                              <td className="px-2 py-1 text-right tabular-nums">
-                                {fmtDur(d.duration)}
-                              </td>
-                              <td className="px-2 py-1">
-                                {d.defenderName}
-                                <span className="ml-1 text-muted-foreground">
-                                  TH{d.defenderTH}
-                                </span>
-                              </td>
-                              <td
-                                className={`px-2 py-1 text-right tabular-nums ${
-                                  d.thDiff > 0
-                                    ? "text-green-400"
-                                    : d.thDiff < 0
-                                      ? "text-red-400"
-                                      : "text-muted-foreground"
-                                }`}
-                              >
-                                {d.thDiff > 0 ? `+${d.thDiff}` : d.thDiff}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    )}
-                  </td>
-                </tr>
-              )}
-            </Fragment>
+            </tr>
           ))}
         </tbody>
       </table>
     </div>
+  );
+}
+
+/** Per-attack charts for one member — shared by widget preview and modal.
+ *  `large` = 2×2 grid with taller charts (member detail modal). */
+function MemberCharts({ m, large = false }: { m: MemberAnalytics; large?: boolean }) {
+  const atk = m.detail.map((d, i) => ({ ...d, i: i + 1 }));
+  const chartCls = large ? "h-44" : undefined;
+  return (
+    <div
+      className={`grid gap-2 ${large ? "grid-cols-2" : "grid-cols-2 xl:grid-cols-4"}`}
+    >
+      <MiniChart title="Stars per attack" chartClassName={chartCls}>
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={atk}>
+            <XAxis dataKey="i" tick={{ fontSize: 9 }} />
+            <YAxis
+              domain={[0, 3]}
+              ticks={[0, 1, 2, 3]}
+              tick={{ fontSize: 9 }}
+              width={18}
+            />
+            <Tooltip
+              contentStyle={CHART_STYLE}
+              labelFormatter={(i) =>
+                `${atk[(i as number) - 1]?.war ?? ""} → ${
+                  atk[(i as number) - 1]?.defenderName ?? ""
+                }`
+              }
+            />
+            <Bar dataKey="stars" fill="#eab308" />
+          </BarChart>
+        </ResponsiveContainer>
+      </MiniChart>
+      <MiniChart title="Attack order (timing)" chartClassName={chartCls}>
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={atk}>
+            <XAxis dataKey="i" tick={{ fontSize: 9 }} />
+            <YAxis
+              reversed
+              domain={[1, "auto"]}
+              tick={{ fontSize: 9 }}
+              width={18}
+            />
+            <Tooltip
+              contentStyle={CHART_STYLE}
+              labelFormatter={(i) => atk[(i as number) - 1]?.war ?? ""}
+            />
+            <Line
+              type="monotone"
+              dataKey="order"
+              stroke="var(--primary)"
+              dot={{ r: 2 }}
+              strokeWidth={1.5}
+            />
+          </LineChart>
+        </ResponsiveContainer>
+      </MiniChart>
+      <MiniChart title="Attack duration" chartClassName={chartCls}>
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={atk}>
+            <XAxis dataKey="i" tick={{ fontSize: 9 }} />
+            <YAxis
+              tick={{ fontSize: 9 }}
+              width={34}
+              tickFormatter={(v) => fmtDur(v as number)}
+            />
+            <Tooltip
+              contentStyle={CHART_STYLE}
+              formatter={(v) => [fmtDur(v as number), "duration"]}
+              labelFormatter={(i) => atk[(i as number) - 1]?.war ?? ""}
+            />
+            <Bar dataKey="duration" fill="#22c55e" />
+          </BarChart>
+        </ResponsiveContainer>
+      </MiniChart>
+      <MiniChart title="Matchup (TH diff → stars)" chartClassName={chartCls}>
+        <ResponsiveContainer width="100%" height="100%">
+          <ScatterChart>
+            <XAxis
+              dataKey="thDiff"
+              type="number"
+              tick={{ fontSize: 9 }}
+              name="TH diff"
+            />
+            <YAxis
+              dataKey="stars"
+              type="number"
+              domain={[0, 3]}
+              ticks={[0, 1, 2, 3]}
+              tick={{ fontSize: 9 }}
+              width={18}
+            />
+            <Tooltip
+              contentStyle={CHART_STYLE}
+              cursor={{ strokeDasharray: "3 3" }}
+              formatter={(v, name) =>
+                name === "TH diff"
+                  ? [v as number, "TH diff"]
+                  : [v as number, "stars"]
+              }
+            />
+            <Scatter data={atk} fill="#a855f7" />
+          </ScatterChart>
+        </ResponsiveContainer>
+      </MiniChart>
+    </div>
+  );
+}
+
+/** War-by-war attack rows for one member. */
+function AttackDetailTable({ detail }: { detail: AttackDetail[] }) {
+  return (
+    <table className="w-full text-xs">
+      <thead className="text-muted-foreground">
+        <tr className="border-b border-border/60 text-left">
+          <th className="px-2 py-1 font-medium">War</th>
+          <th className="px-2 py-1 font-medium">Date</th>
+          <th className="px-2 py-1 text-right font-medium">Atk #</th>
+          <th className="px-2 py-1 text-right font-medium">Stars</th>
+          <th className="px-2 py-1 text-right font-medium">Destr</th>
+          <th className="px-2 py-1 text-right font-medium">Time</th>
+          <th className="px-2 py-1 font-medium">Defender</th>
+          <th className="px-2 py-1 text-right font-medium">TH diff</th>
+        </tr>
+      </thead>
+      <tbody>
+        {detail.map((d, i) => (
+          <tr key={i} className="border-b border-border/30 last:border-0">
+            <td className="px-2 py-1">{d.war}</td>
+            <td className="px-2 py-1 text-muted-foreground tabular-nums">
+              {d.ts ? new Date(d.ts).toLocaleDateString() : "—"}
+            </td>
+            <td className="px-2 py-1 text-right tabular-nums">{d.order}</td>
+            <td className="px-2 py-1 text-right">
+              <Stars n={d.stars} />
+            </td>
+            <td className="px-2 py-1 text-right tabular-nums">
+              {d.destruction.toFixed(0)}%
+            </td>
+            <td className="px-2 py-1 text-right tabular-nums">
+              {fmtDur(d.duration)}
+            </td>
+            <td className="px-2 py-1">
+              {d.defenderName}
+              <span className="ml-1 text-muted-foreground">
+                TH{d.defenderTH}
+              </span>
+            </td>
+            <td
+              className={`px-2 py-1 text-right tabular-nums ${
+                d.thDiff > 0
+                  ? "text-green-400"
+                  : d.thDiff < 0
+                    ? "text-red-400"
+                    : "text-muted-foreground"
+              }`}
+            >
+              {d.thDiff > 0 ? `+${d.thDiff}` : d.thDiff}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+const MEMBER_DETAIL_LIMIT = 10;
+
+/** Modal opened from the fullscreen analytics table — charts + recent wars. */
+function MemberDetailDialog({
+  member,
+  onClose,
+}: {
+  member: MemberAnalytics | null;
+  onClose: () => void;
+}) {
+  // detail is oldest→newest; show the most recent N rows.
+  const detail = member?.detail.slice(-MEMBER_DETAIL_LIMIT) ?? [];
+  return (
+    <Dialog open={member !== null} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-h-[88vh] w-[90vw] max-w-[90vw] overflow-auto sm:max-w-[90vw]">
+        {member && (
+          <>
+            <DialogHeader>
+              <DialogTitle>
+                {member.name}
+                <span className="ml-2 text-sm font-normal text-muted-foreground">
+                  TH{member.townHall} · {member.attacks} attacks ·{" "}
+                  {member.wars} wars
+                </span>
+              </DialogTitle>
+            </DialogHeader>
+            {member.detail.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                No per-attack detail captured — only wars seen while active have
+                attack data.
+              </p>
+            ) : (
+              <>
+                <MemberCharts m={member} large />
+                <div>
+                  <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                    War by war
+                    {member.detail.length > MEMBER_DETAIL_LIMIT &&
+                      ` · latest ${MEMBER_DETAIL_LIMIT} of ${member.detail.length}`}
+                  </p>
+                  <AttackDetailTable detail={detail} />
+                </div>
+              </>
+            )}
+          </>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }
 

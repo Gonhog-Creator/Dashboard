@@ -7,5 +7,9 @@ export const metadata = {
 };
 
 export default function CocPage() {
-  return <CocDashboard />;
+  return (
+    <div className="coc-theme">
+      <CocDashboard />
+    </div>
+  );
 }
