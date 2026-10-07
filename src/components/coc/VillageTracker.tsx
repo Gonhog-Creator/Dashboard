@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Hammer, Zap, Wrench } from "lucide-react";
 import { Widget } from "@/components/layout/Widget";
+import { maxLevelForTH } from "@/lib/coc/village";
 
 interface VillageItem {
   dataId: number;
@@ -82,9 +83,17 @@ function timeLeft(iso: string): string {
   return `${m}m`;
 }
 
-function ItemChip({ item }: { item: VillageItem }) {
+function ItemChip({ item, th }: { item: VillageItem; th?: number }) {
   const maxed =
     item.maxLevel != null && item.levels.every((l) => l >= item.maxLevel!);
+  // All copies at the highest level this TH allows (but not absolute max).
+  const thMax = th != null ? maxLevelForTH(item.name, th) : null;
+  const thMaxed =
+    !maxed &&
+    thMax != null &&
+    item.maxLevel != null &&
+    thMax < item.maxLevel &&
+    item.levels.every((l) => l >= thMax);
   // Obstacles/decorations have no levels — show amount owned instead of "0".
   const hasLevels =
     item.maxLevel != null || item.levels.some((l) => l > 0);
@@ -96,7 +105,11 @@ function ItemChip({ item }: { item: VillageItem }) {
   return (
     <div
       className={`flex w-20 flex-col items-center gap-1 rounded-md border p-2 ${
-        maxed ? "border-green-500/40" : "border-border"
+        maxed
+          ? "border-green-500/40"
+          : thMaxed
+            ? "border-[#c08552]/60"
+            : "border-border"
       }`}
       title={`${item.name} ×${item.count} — levels ${item.levels.join(", ")}${
         item.maxLevel ? ` (max ${item.maxLevel})` : ""
@@ -275,7 +288,7 @@ export function VillageCategories({ refreshKey }: { refreshKey: number }) {
           )}
           <div className="flex flex-wrap gap-1.5">
             {c.items.map((it) => (
-              <ItemChip key={it.dataId} item={it} />
+              <ItemChip key={it.dataId} item={it} th={v.townHall} />
             ))}
           </div>
         </Widget>

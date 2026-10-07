@@ -58,6 +58,63 @@ function maxLevelAt(id: number, th: number): number | null {
   return max || req.length;
 }
 
+/**
+ * Name → gamedata entries. Some names exist in both villages (Cannon, Baby
+ * Dragon) — callers pick by village, defaulting to "home". API display names
+ * match gamedata names for heroes/troops/spells/pets/equipment.
+ */
+let BY_NAME: Map<string, GameItem[]> | null = null;
+function byName(): Map<string, GameItem[]> {
+  if (!BY_NAME) {
+    BY_NAME = new Map();
+    for (const k of Object.keys(DATA)) {
+      const item = info(Number(k));
+      if (!item) continue;
+      const l = BY_NAME.get(item.name) ?? [];
+      l.push(item);
+      BY_NAME.set(item.name, l);
+    }
+  }
+  return BY_NAME;
+}
+
+/**
+ * Pet names per gamedata. The CoC API folds pets into the `troops` array —
+ * there is no `pets` field on /players/{tag} — so callers split by name.
+ */
+let PET_NAMES: Set<string> | null = null;
+export function isPet(name: string): boolean {
+  if (!PET_NAMES) {
+    PET_NAMES = new Set();
+    for (const k of Object.keys(DATA)) {
+      const e = DATA[k];
+      if (e[1] === "pets") PET_NAMES.add(cleanName(e[0]));
+    }
+  }
+  return PET_NAMES.has(name);
+}
+
+/**
+ * Highest level achievable at the given TH for a named item, or null if the
+ * name isn't in gamedata. Prefers the home-village entry on name collisions.
+ */
+export function maxLevelForTH(
+  name: string,
+  th: number,
+  village = "home"
+): number | null {
+  const items = byName().get(name);
+  if (!items?.length) return null;
+  const item = items.find((i) => i.village === village) ?? items[0];
+  const req = item.reqTH;
+  if (!req.length) return null;
+  let max = 0;
+  for (let i = 0; i < req.length; i++) {
+    if (req[i] === 0 || req[i] <= th) max = i + 1;
+  }
+  return max || req.length;
+}
+
 export type IconKind =
   | "building"
   | "trap"

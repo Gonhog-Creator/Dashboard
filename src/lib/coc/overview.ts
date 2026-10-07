@@ -8,7 +8,7 @@ import { prisma, ensureWal } from "@/lib/db";
 import { cached } from "@/lib/cache";
 import { getSetting } from "@/lib/settings";
 import { api, cocConfig, normalizeTag, parseCocTime } from "./client";
-import { iconUrl, parseVillage } from "./village";
+import { iconUrl, isPet, parseVillage } from "./village";
 import { pollClan } from "./sync";
 
 export interface CocOverview {
@@ -58,6 +58,8 @@ export interface CocOverview {
     } | null;
     endTime: string | null;
     startTime: string | null;
+    /** "regular" | "cwl" — null when the war isn't identified in the DB yet. */
+    type: string | null;
   } | null;
   me: {
     tag: string;
@@ -203,10 +205,26 @@ async function getOverviewUncached(): Promise<CocOverview> {
   }
 
   // War: prefer the freshest stored row; overlay live state when active.
-  const storedWar = await prisma.cocWar.findFirst({
-    orderBy: { updatedAt: "desc" },
-    include: { attacks: true },
-  });
+  // During CWL every round's row gets touched each poll, so updatedAt order
+  // can pick a future (preparation) round or a stale backfill — instead pick
+  // the live battle first, then the upcoming prep round, then the last war.
+  const now = new Date();
+  const warInclude = { include: { attacks: true } } as const;
+  const storedWar =
+    (await prisma.cocWar.findFirst({
+      where: { state: "inWar", endTime: { gte: now } },
+      orderBy: { startTime: "desc" },
+      ...warInclude,
+    })) ??
+    (await prisma.cocWar.findFirst({
+      where: { state: "preparation", endTime: { gte: now } },
+      orderBy: { startTime: "asc" },
+      ...warInclude,
+    })) ??
+    (await prisma.cocWar.findFirst({
+      orderBy: { updatedAt: "desc" },
+      ...warInclude,
+    }));
   let war: CocOverview["war"] = null;
   try {
     const live = await api.currentWar(clanTag);
@@ -262,6 +280,24 @@ async function getOverviewUncached(): Promise<CocOverview> {
             destruction: d.destructionPercentage,
           };
       }
+      // Live war during CWL still carries no warTag — detect the type by
+      // matching a stored CWL row on (startTime, opponent).
+      const liveStart = parseCocTime(live.startTime);
+      const liveOppTag = live.opponent?.tag
+        ? normalizeTag(live.opponent.tag)
+        : null;
+      const liveType = liveStart
+        ? (
+            (await prisma.cocWar.findFirst({
+              where: { type: "cwl", startTime: liveStart, opponentTag: liveOppTag },
+              select: { type: true },
+            })) ??
+            (await prisma.cocWar.findFirst({
+              where: { type: "regular", startTime: liveStart, opponentTag: liveOppTag },
+              select: { type: true },
+            }))
+          )?.type ?? null
+        : null;
       war = {
         state: live.state,
         opponent: live.opponent?.name ?? null,
@@ -281,7 +317,8 @@ async function getOverviewUncached(): Promise<CocOverview> {
         bestAttack,
         bestDefense,
         endTime: parseCocTime(live.endTime)?.toISOString() ?? null,
-        startTime: parseCocTime(live.startTime)?.toISOString() ?? null,
+        startTime: liveStart?.toISOString() ?? null,
+        type: liveType,
       };
     }
   } catch {
@@ -337,6 +374,7 @@ async function getOverviewUncached(): Promise<CocOverview> {
         : null,
       endTime: storedWar.endTime?.toISOString() ?? null,
       startTime: storedWar.startTime?.toISOString() ?? null,
+      type: storedWar.type,
     };
   }
 
@@ -537,10 +575,21 @@ export async function getMembers() {
           where: { playerTag: p.tag },
           orderBy: { ts: "desc" },
         }),
-        prisma.cocPlayerSnapshot.findFirst({
-          where: { playerTag: p.tag, ts: { lte: since } },
-          orderBy: { ts: "desc" },
-        }),
+        prisma.cocPlayerSnapshot
+          .findFirst({
+            where: { playerTag: p.tag, ts: { lte: since } },
+            orderBy: { ts: "desc" },
+          })
+          // Fewer than 30d of history — fall back to the earliest snapshot
+          // so the delta column still shows something honest.
+          .then(
+            (m) =>
+              m ??
+              prisma.cocPlayerSnapshot.findFirst({
+                where: { playerTag: p.tag },
+                orderBy: { ts: "asc" },
+              })
+          ),
       ]);
       return {
         tag: p.tag,
@@ -563,13 +612,20 @@ export async function getMembers() {
         warStars: latest?.warStars ?? null,
         legendTrophies: latest?.legendTrophies ?? null,
         delta30d:
-          latest && monthAgo
+          latest && monthAgo && monthAgo.id !== latest.id
             ? {
                 trophies: latest.trophies - monthAgo.trophies,
                 donations: latest.donations - monthAgo.donations,
                 warStars: latest.warStars - monthAgo.warStars,
                 expLevel: latest.expLevel - monthAgo.expLevel,
               }
+            : null,
+        // Actual days between the baseline and latest snapshot (<= 30).
+        deltaDays:
+          latest && monthAgo && monthAgo.id !== latest.id
+            ? Math.round(
+                (latest.ts.getTime() - monthAgo.ts.getTime()) / 86400_000
+              )
             : null,
         lastSnapshotAt: latest?.ts.toISOString() ?? null,
       };
@@ -601,7 +657,7 @@ export async function getPlayerHistory(tag: string, days = 90) {
     where: { playerTag: normalizeTag(tag), ts: { gte: since } },
     orderBy: { ts: "asc" },
   });
-  return snaps.map((s) => {
+  const rows = snaps.map((s) => {
     const ach = achievementMap(s.achievements);
     return {
       ts: s.ts.toISOString(),
@@ -630,6 +686,18 @@ export async function getPlayerHistory(tag: string, days = 90) {
       petLevels: sumLevels(s.pets),
     };
   });
+
+  // Pets were split out of `troops` partway through history — snapshots from
+  // before that have pets=null while troops still include the pet levels, so
+  // the troops line cliff-drops at the transition. Subtract the first
+  // observed pet sum from every pre-split row (floored at 0).
+  const firstPet = rows.find((r) => r.petLevels != null)?.petLevels ?? 0;
+  if (firstPet > 0)
+    for (const r of rows)
+      if (r.petLevels == null && r.troopLevels != null)
+        r.troopLevels = Math.max(0, r.troopLevels - firstPet);
+
+  return rows;
 }
 
 /** achievement name → value for one snapshot's JSON blob. */
@@ -1076,6 +1144,79 @@ export async function getMe() {
       legendTrophies: s.legendTrophies,
       warStars: s.warStars,
       donations: s.donations,
+    })),
+  };
+}
+
+/**
+ * Members tab profile modal: live /players/{tag} detail (units included) +
+ * stored battle log. Buildings are not exposed by the API — the modal only
+ * shows the village tracker when tag === configured player.
+ */
+export async function getMemberDetail(tag: string) {
+  await ensureWal();
+  const t = normalizeTag(tag);
+
+  const [player, battles] = await Promise.all([
+    prisma.cocPlayer.findUnique({ where: { tag: t } }),
+    prisma.cocBattle.findMany({
+      where: { playerTag: t },
+      orderBy: { ts: "desc" },
+      take: 40,
+    }),
+  ]);
+
+  let live = null;
+  try {
+    const p = await api.player(t);
+    const units = (arr?: { name: string; level: number; maxLevel: number; village: string }[]) =>
+      (arr ?? [])
+        .filter((x) => x.village === "home")
+        .map((x) => ({ name: x.name, level: x.level, maxLevel: x.maxLevel }));
+    live = {
+      name: p.name,
+      townHall: p.townHallLevel,
+      builderHall: p.builderHallLevel ?? null,
+      expLevel: p.expLevel,
+      trophies: p.trophies,
+      bestTrophies: p.bestTrophies,
+      builderBaseTrophies: p.builderBaseTrophies ?? 0,
+      league: p.leagueTier?.name ?? null,
+      leagueIcon: p.leagueTier?.iconUrls?.small ?? null,
+      builderBaseLeague: p.builderBaseLeague?.name ?? null,
+      legendTrophies: p.legendStatistics?.legendTrophies ?? null,
+      warStars: p.warStars ?? 0,
+      donations: p.donations,
+      donationsReceived: p.donationsReceived,
+      capitalContributions: p.clanCapitalContributions ?? 0,
+      role: p.role ?? player?.role ?? null,
+      clanName: p.clan?.name ?? null,
+      thIcon: iconUrl("building", "Town Hall", p.townHallLevel),
+      heroes: units(p.heroes),
+      equipment: units(p.heroEquipment),
+      // The API folds pets into troops[] — split them by gamedata type.
+      troops: units(p.troops?.filter((x) => !isPet(x.name))),
+      spells: units(p.spells),
+      pets: units(p.troops?.filter((x) => isPet(x.name))),
+    };
+  } catch {
+    // API down — fall back to stored identity
+    live = null;
+  }
+
+  return {
+    tag: t,
+    inClan: player?.inClan ?? false,
+    name: live?.name ?? player?.name ?? t,
+    live,
+    battles: battles.map((b) => ({
+      ts: b.ts.toISOString(),
+      type: b.type,
+      stars: b.stars,
+      destruction: b.destruction,
+      trophiesDelta: b.trophiesDelta,
+      opponentName: b.opponentName,
+      opponentTH: b.opponentTH,
     })),
   };
 }

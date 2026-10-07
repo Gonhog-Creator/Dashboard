@@ -291,7 +291,28 @@ function imageMatchesTarget(
   return distinctive || (shared >= 2 && nonGeneric >= 1);
 }
 
+/** Live scan state — polled by /api/astro/scan/progress. */
+export const scanProgress = {
+  running: false,
+  phase: "idle" as "idle" | "enumerating" | "parsing" | "finals" | "done",
+  done: 0,
+  total: 0,
+};
+
 export async function scanFitsLibrary(root: string): Promise<FitsScanResult> {
+  scanProgress.running = true;
+  scanProgress.phase = "enumerating";
+  scanProgress.done = 0;
+  scanProgress.total = 0;
+  try {
+    return await scanFitsLibraryImpl(root);
+  } finally {
+    scanProgress.running = false;
+    scanProgress.phase = "done";
+  }
+}
+
+async function scanFitsLibraryImpl(root: string): Promise<FitsScanResult> {
   const errors: string[] = [];
   const targets = new Map<string, TargetAccum>();
   let fileCount = 0;
@@ -300,6 +321,8 @@ export async function scanFitsLibrary(root: string): Promise<FitsScanResult> {
   // open/read/close per file is the bottleneck on large libraries.
   const files: string[] = [];
   for await (const file of walk(root, errors)) files.push(file);
+  scanProgress.phase = "parsing";
+  scanProgress.total = files.length;
 
   // Per-file cache: unchanged files (same mtime+size) skip header parsing.
   const cache = await loadFileCache(root);
@@ -329,6 +352,7 @@ export async function scanFitsLibrary(root: string): Promise<FitsScanResult> {
         };
       }
       seen.set(file, entry);
+      scanProgress.done++;
       if (!entry.valid || !entry.object) continue;
 
       fileCount++;
@@ -402,6 +426,7 @@ export async function scanFitsLibrary(root: string): Promise<FitsScanResult> {
 
   // Persist the file cache so the next scan only re-parses new/changed files.
   await saveFileCache(root, seen);
+  scanProgress.phase = "finals";
 
   // Match final images (Finals/<scope>/*.jpg etc.) to targets.
   const finalsByTarget = new Map<string, string[]>();
@@ -462,6 +487,9 @@ export async function scanFitsLibrary(root: string): Promise<FitsScanResult> {
           frames: f.frames,
           seconds: f.seconds,
           subSeconds: modalExptime(f.exptimes),
+          exptimes: [...f.exptimes.entries()]
+            .map(([seconds, frames]) => ({ seconds, frames }))
+            .sort((a, b) => a.seconds - b.seconds),
           dates: [...f.dates.entries()]
             .map(([date, d]) => ({ date, frames: d.frames, seconds: d.seconds }))
             .sort((a, b) => a.date.localeCompare(b.date)),

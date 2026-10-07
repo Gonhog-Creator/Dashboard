@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Widget } from "@/components/layout/Widget";
 import { VillageSummary, VillageCategories } from "./VillageTracker";
 import { StatIcon } from "./icons";
-import { iconUrl } from "@/lib/coc/village";
+import { iconUrl, maxLevelForTH } from "@/lib/coc/village";
 import {
   LineChart,
   Line,
@@ -135,7 +135,9 @@ export function MePanel({ refreshKey }: { refreshKey: number }) {
                       className={`flex items-center gap-1 rounded border px-1.5 py-0.5 text-xs tabular-nums ${
                         h.level >= h.maxLevel
                           ? "border-green-500/40 text-green-400"
-                          : "border-border"
+                          : (maxLevelForTH(h.name, live.townHall) ?? 0) <= h.level
+                            ? "border-[#c08552]/60 text-[#e2b48f]"
+                            : "border-border"
                       }`}
                     >
                       <StatIcon icon={iconUrl("hero", h.name)} size={22} />
@@ -155,7 +157,9 @@ export function MePanel({ refreshKey }: { refreshKey: number }) {
                       className={`flex items-center gap-1 rounded border px-1.5 py-0.5 text-xs tabular-nums ${
                         e.level >= e.maxLevel
                           ? "border-green-500/40 text-green-400"
-                          : "border-border"
+                          : (maxLevelForTH(e.name, live.townHall) ?? 0) <= e.level
+                            ? "border-[#c08552]/60 text-[#e2b48f]"
+                            : "border-border"
                       }`}
                     >
                       <StatIcon icon={iconUrl("equipment", e.name)} size={22} />

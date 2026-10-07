@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
+  Binary,
   Calendar,
   CheckSquare,
   FileText,
@@ -34,6 +35,7 @@ const NAV = [
   { href: "/reports", label: "Reports", icon: FileText },
   { href: "/github", label: "GitHub", icon: GitBranch },
   { href: "/jobs", label: "Jobs", icon: Timer },
+  { href: "/enigma", label: "Enigma", icon: Binary },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 

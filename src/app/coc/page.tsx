@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { CocDashboard } from "@/components/coc/CocDashboard";
 
 export const dynamic = "force-dynamic";
@@ -9,7 +10,10 @@ export const metadata = {
 export default function CocPage() {
   return (
     <div className="coc-theme">
-      <CocDashboard />
+      {/* Suspense required: CocDashboard reads useSearchParams (?tab, ?member) */}
+      <Suspense>
+        <CocDashboard />
+      </Suspense>
     </div>
   );
 }

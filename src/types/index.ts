@@ -76,11 +76,17 @@ export interface FilterDateBreakdown {
   seconds: number;
 }
 
+export interface ExptimeBreakdown {
+  seconds: number; // sub-exposure length
+  frames: number; // how many subs used it
+}
+
 export interface FilterBreakdown {
   filter: string; // FILTER header value, or "OSC" when none recorded
   frames: number;
   seconds: number;
   subSeconds: number | null; // modal sub-exposure for this filter
+  exptimes?: ExptimeBreakdown[]; // per-exposure histogram; absent on pre-change scans
   dates?: FilterDateBreakdown[]; // per-date subs; absent on pre-change scans
 }
 

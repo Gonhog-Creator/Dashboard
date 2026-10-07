@@ -1,4 +1,5 @@
 import {
+  getMemberDetail,
   getMembers,
   getPlayerHistory,
   getProgressLog,
@@ -10,6 +11,8 @@ export async function GET(req: Request) {
   const url = new URL(req.url);
   const tag = url.searchParams.get("tag");
   if (tag) {
+    if (url.searchParams.get("detail"))
+      return Response.json(await getMemberDetail(tag));
     if (url.searchParams.get("log"))
       return Response.json(await getProgressLog(tag));
     const days = Number(url.searchParams.get("days") ?? 90);

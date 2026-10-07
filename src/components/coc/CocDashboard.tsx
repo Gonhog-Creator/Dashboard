@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   Swords,
   LayoutDashboard,
@@ -43,7 +44,18 @@ const TABS = [
 ];
 
 export function CocDashboard() {
-  const [tab, setTab] = useState("overview");
+  const router = useRouter();
+  const pathname = usePathname();
+  const params = useSearchParams();
+  const tabParam = params.get("tab");
+  const tab = TABS.some((t) => t.id === tabParam) ? tabParam! : "overview";
+
+  function setTab(id: string) {
+    const q = new URLSearchParams(params.toString());
+    if (id === "overview") q.delete("tab");
+    else q.set("tab", id);
+    router.replace(`${pathname}?${q}`, { scroll: false });
+  }
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -98,6 +110,7 @@ export function CocDashboard() {
       </header>
 
       <Tabs value={tab} onValueChange={setTab}>
+        {/* member param is managed by MembersPanel itself */}
         <TabsList className="mb-4 flex-wrap h-auto">
           {TABS.map(({ id, label, icon: Icon }) => (
             <TabsTrigger key={id} value={id} className="gap-1.5">

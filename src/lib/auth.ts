@@ -53,7 +53,14 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           }),
         });
         const data = await res.json();
-        if (!res.ok) throw data;
+        if (!res.ok) {
+          // Google returns { error, error_description } — preserve both so
+          // the console shows WHY the refresh was rejected, not "{}".
+          throw new Error(
+            `Google token refresh ${res.status}: ${data.error ?? "unknown"}` +
+              (data.error_description ? ` — ${data.error_description}` : "")
+          );
+        }
         token.accessToken = data.access_token;
         token.expiresAt = Date.now() + data.expires_in * 1000;
         if (data.refresh_token) token.refreshToken = data.refresh_token;

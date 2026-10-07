@@ -52,6 +52,7 @@ interface Overview {
     } | null;
     endTime: string | null;
     startTime: string | null;
+    type: string | null; // "regular" | "cwl" (null until matched in DB)
   } | null;
   me: {
     tag: string;
@@ -207,6 +208,10 @@ export function OverviewPanel({ refreshKey }: { refreshKey: number }) {
       ? Date.parse(war.endTime) <= Date.now()
       : war.state === "warEnded"
     : false;
+  // The overview payload carries a type when the war is identified in the DB;
+  // fall back to the matched Wars-tab row so the badge still shows if the
+  // live fetch matched a different (or flipped-side) record.
+  const isCwl = war?.type === "cwl" || matchedWar?.type === "cwl";
   const warPreparing = !!war && !warEnded && war.state === "preparation";
   const warLive = !!war && !warEnded && war.state === "inWar";
   const warActive = warLive || warPreparing;
@@ -406,19 +411,26 @@ export function OverviewPanel({ refreshKey }: { refreshKey: number }) {
         }
         action={
           war ? (
-            warLive ? (
-              <span className="rounded bg-green-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-green-400">
-                Live
-              </span>
-            ) : warPreparing ? (
-              <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-amber-400">
-                Preparation
-              </span>
-            ) : (
-              <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold uppercase text-muted-foreground">
-                Ended
-              </span>
-            )
+            <span className="flex items-center gap-1.5">
+              {isCwl && (
+                <span className="rounded bg-primary/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-primary">
+                  CWL
+                </span>
+              )}
+              {warLive ? (
+                <span className="rounded bg-green-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-green-400">
+                  Live
+                </span>
+              ) : warPreparing ? (
+                <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-amber-400">
+                  Preparation
+                </span>
+              ) : (
+                <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold uppercase text-muted-foreground">
+                  Ended
+                </span>
+              )}
+            </span>
           ) : undefined
         }
       >

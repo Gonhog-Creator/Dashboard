@@ -30,6 +30,95 @@ import { cn } from "@/lib/utils";
 
 const MIN_SECONDS = 3600; // hide targets under 1h of integration
 
+type ScanProgress = {
+  running: boolean;
+  phase: "idle" | "enumerating" | "parsing" | "finals" | "done";
+  done: number;
+  total: number;
+};
+
+/** One row in the post-scan changes modal. */
+interface TargetDelta {
+  name: string;
+  status: "new" | "removed" | "updated";
+  framesDelta: number;
+  secondsDelta: number;
+  bytesDelta: number;
+  /** Per-filter frame delta, e.g. "L +38". */
+  filterDeltas: string[];
+  newFinals: number;
+}
+
+/** Signed hours like +1.4h / −0.8h. */
+function fmtDeltaHours(seconds: number) {
+  const sign = seconds < 0 ? "\u2212" : "+";
+  return `${sign}${Math.abs(seconds / 3600).toFixed(1)}h`;
+}
+
+function fmtDeltaInt(v: number) {
+  return v < 0 ? `\u2212${Math.abs(v)}` : `+${v}`;
+}
+
+/** Diff the pre-scan target list against the post-scan one. */
+function diffScan(prev: LibraryTarget[], next: LibraryTarget[]) {
+  const byName = new Map(prev.map((t) => [t.name, t]));
+  const deltas: TargetDelta[] = [];
+  for (const t of next) {
+    const p = byName.get(t.name);
+    if (!p) {
+      deltas.push({
+        name: t.name,
+        status: "new",
+        framesDelta: t.totalFrames,
+        secondsDelta: t.totalSeconds,
+        bytesDelta: t.totalBytes,
+        filterDeltas: t.filters.map((f) => `${f.filter} ${f.frames}`),
+        newFinals: t.finals.length,
+      });
+      continue;
+    }
+    const framesDelta = t.totalFrames - p.totalFrames;
+    const secondsDelta = t.totalSeconds - p.totalSeconds;
+    const bytesDelta = t.totalBytes - p.totalBytes;
+    const prevFinals = new Set(p.finals);
+    const newFinals = t.finals.filter((f) => !prevFinals.has(f)).length;
+    const prevFilters = new Map(p.filters.map((f) => [f.filter, f.frames]));
+    const filterDeltas = t.filters
+      .map((f) => ({ f, d: f.frames - (prevFilters.get(f.filter) ?? 0) }))
+      .filter((x) => x.d !== 0)
+      .map((x) => `${x.f.filter} ${fmtDeltaInt(x.d)}`);
+    if (framesDelta !== 0 || secondsDelta !== 0 || bytesDelta !== 0 || newFinals > 0)
+      deltas.push({
+        name: t.name,
+        status: "updated",
+        framesDelta,
+        secondsDelta,
+        bytesDelta,
+        filterDeltas,
+        newFinals,
+      });
+  }
+  const nextNames = new Set(next.map((t) => t.name));
+  for (const p of prev) {
+    if (!nextNames.has(p.name))
+      deltas.push({
+        name: p.name,
+        status: "removed",
+        framesDelta: -p.totalFrames,
+        secondsDelta: -p.totalSeconds,
+        bytesDelta: -p.totalBytes,
+        filterDeltas: [],
+        newFinals: 0,
+      });
+  }
+  deltas.sort((a, b) => Math.abs(b.secondsDelta) - Math.abs(a.secondsDelta));
+  return {
+    deltas,
+    addedFrames: deltas.reduce((s, d) => s + Math.max(0, d.framesDelta), 0),
+    addedSeconds: deltas.reduce((s, d) => s + Math.max(0, d.secondsDelta), 0),
+  };
+}
+
 function fmtHours(seconds: number) {
   return (seconds / 3600).toFixed(1);
 }
@@ -91,15 +180,22 @@ export function FitsLibrary({
   );
   const [loading, setLoading] = useState(!initialTargets);
   const [scanning, setScanning] = useState(false);
+  const [progress, setProgress] = useState<ScanProgress | null>(null);
   const [selected, setSelected] = useState<LibraryTarget | null>(null);
+  const [scanDiff, setScanDiff] = useState<ReturnType<
+    typeof diffScan
+  > | null>(null);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (): Promise<LibraryTarget[]> => {
     const res = await fetch("/api/astro/scan");
+    let t: LibraryTarget[] = [];
     if (res.ok) {
       const d = await res.json();
-      setTargets(d.targets ?? []);
+      t = d.targets ?? [];
+      setTargets(t);
     }
     setLoading(false);
+    return t;
   }, []);
 
   useEffect(() => {
@@ -109,12 +205,30 @@ export function FitsLibrary({
 
   async function triggerScan() {
     setScanning(true);
-    const res = await fetch("/api/astro/scan", { method: "POST" });
-    const d = await res.json();
-    if (res.ok) toast.success(`Scan complete: ${d.message}`);
-    else toast.error(`Scan failed: ${d.message}`);
-    setScanning(false);
-    load();
+    setProgress({ running: true, phase: "enumerating", done: 0, total: 0 });
+    const before = targets; // snapshot for the post-scan diff
+    // Poll the shared progress snapshot while the scan runs server-side.
+    const timer = setInterval(async () => {
+      const r = await fetch("/api/astro/scan/progress").catch(() => null);
+      if (r?.ok) setProgress(await r.json());
+    }, 500);
+    let ok = false;
+    try {
+      const res = await fetch("/api/astro/scan", { method: "POST" });
+      const d = await res.json();
+      ok = res.ok;
+      if (res.ok) toast.success(`Scan complete: ${d.message}`);
+      else toast.error(`Scan failed: ${d.message}`);
+    } finally {
+      clearInterval(timer);
+      setScanning(false);
+      setProgress(null);
+      const next = await load();
+      if (ok) {
+        const diff = diffScan(before, next);
+        if (diff.deltas.length) setScanDiff(diff);
+      }
+    }
   }
 
   const visible = targets.filter((t) => t.totalSeconds >= MIN_SECONDS);
@@ -139,6 +253,34 @@ export function FitsLibrary({
           {scanning ? "Scanning…" : "Scan now"}
         </Button>
       </div>
+      {progress && (
+        <div className="flex items-center gap-2">
+          <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
+            {/* No indeterminate fill — a fake 33% reads as real progress. The
+                phase label carries the status while total is unknown. */}
+            <div
+              className="h-full bg-primary transition-all duration-300"
+              style={{
+                width:
+                  progress.phase === "parsing" && progress.total > 0
+                    ? `${Math.round((progress.done / progress.total) * 100)}%`
+                    : progress.phase === "finals" || progress.phase === "done"
+                      ? "100%"
+                      : "0%",
+              }}
+            />
+          </div>
+          <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">
+            {progress.phase === "parsing" && progress.total > 0
+              ? `${progress.done}/${progress.total} files`
+              : progress.phase === "finals"
+                ? "matching finals…"
+                : progress.phase === "enumerating"
+                  ? "enumerating…"
+                  : "starting…"}
+          </span>
+        </div>
+      )}
       {loading ? (
         <p className="text-sm text-muted-foreground">Loading…</p>
       ) : visible.length === 0 ? (
@@ -212,6 +354,74 @@ export function FitsLibrary({
           )
         }
       />
+
+      <Dialog
+        open={scanDiff !== null}
+        onOpenChange={(open) => !open && setScanDiff(null)}
+      >
+        <DialogContent className="sm:max-w-lg max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Changes since last scan</DialogTitle>
+            {scanDiff && (
+              <DialogDescription>
+                {scanDiff.deltas.length} target
+                {scanDiff.deltas.length === 1 ? "" : "s"} changed ·{" "}
+                {fmtDeltaInt(scanDiff.addedFrames)} files ·{" "}
+                {fmtDeltaHours(scanDiff.addedSeconds)} integration
+              </DialogDescription>
+            )}
+          </DialogHeader>
+          <ul className="flex flex-col gap-2">
+            {scanDiff?.deltas.map((d) => (
+              <li
+                key={d.name}
+                className="rounded-md border border-border px-3 py-2 text-sm"
+              >
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="min-w-0 truncate font-medium">
+                    {d.name}
+                  </span>
+                  <span
+                    className={cn(
+                      "shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase",
+                      d.status === "new" &&
+                        "bg-green-500/15 text-green-400",
+                      d.status === "removed" &&
+                        "bg-red-500/15 text-red-400",
+                      d.status === "updated" &&
+                        "bg-muted text-muted-foreground"
+                    )}
+                  >
+                    {d.status === "updated"
+                      ? `${fmtDeltaInt(d.framesDelta)} files`
+                      : d.status}
+                  </span>
+                </div>
+                <p className="mt-0.5 text-xs text-muted-foreground tabular-nums">
+                  {d.status !== "removed" && (
+                    <>
+                      {fmtDeltaInt(d.framesDelta)} files ·{" "}
+                      {fmtDeltaHours(d.secondsDelta)} ·{" "}
+                      {fmtDeltaInt(Math.round(d.bytesDelta / 1e6))}MB
+                    </>
+                  )}
+                  {d.newFinals > 0 && (
+                    <span>
+                      {" "}
+                      · {d.newFinals} new final{d.newFinals === 1 ? "" : "s"}
+                    </span>
+                  )}
+                </p>
+                {d.filterDeltas.length > 0 && (
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    {d.filterDeltas.join(" · ")}
+                  </p>
+                )}
+              </li>
+            ))}
+          </ul>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -375,7 +585,13 @@ function TargetDetail({
                               {f.frames}
                             </TableCell>
                             <TableCell className="text-right tabular-nums">
-                              {fmtSubs(f.subSeconds)}
+                              {f.exptimes && f.exptimes.length > 0
+                                ? f.exptimes
+                                    .map(
+                                      (e) => `${fmtSubs(e.seconds)}×${e.frames}`
+                                    )
+                                    .join(" + ")
+                                : fmtSubs(f.subSeconds)}
                             </TableCell>
                             <TableCell className="text-right tabular-nums">
                               {fmtHours(f.seconds)}h

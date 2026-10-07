@@ -8,6 +8,7 @@
  */
 
 import { prisma, ensureWal } from "@/lib/db";
+import { isPet } from "./village";
 import {
   api,
   cocConfig,
@@ -31,6 +32,11 @@ export async function pollClan(): Promise<string> {
   const clanTag = requireClanTag(cfg);
 
   const clan = await api.clan(clanTag);
+
+  // The API resolves O->0 in clan tags server-side, so /clans works even when
+  // the configured tag is mis-copied — but string comparisons then fail.
+  // Compare against the canonical tag from the response instead.
+  const canonTag = normalizeTag(clan.tag);
 
   // Upsert members; mark departed players inClan=false.
   const seen = new Set<string>();
@@ -105,7 +111,7 @@ export async function pollClan(): Promise<string> {
 
   let warMsg = "no war";
   try {
-    const war = await api.currentWar(clanTag);
+    const war = await api.currentWar(canonTag);
     if (war.state !== "notInWar") {
       await captureWar(war, "regular", null, null);
       warMsg = `war ${war.state}`;
@@ -119,7 +125,7 @@ export async function pollClan(): Promise<string> {
   // get full per-attack history for the whole season.
   let cwlMsg = "";
   try {
-    const group = await api.leagueGroup(clanTag);
+    const group = await api.leagueGroup(canonTag);
     if (group.state !== "notInWar" && group.rounds?.length) {
       // Persist the 8-clan bracket for standings.
       await prisma.cocCwlSeason.upsert({
@@ -169,22 +175,27 @@ export async function pollClan(): Promise<string> {
         try {
           const w = await api.cwlWar(wt);
           // Only store rounds that involve our clan.
-          const ours =
-            normalizeTag(w.clan?.tag ?? "") === clanTag ||
-            normalizeTag(w.opponent?.tag ?? "") === clanTag;
-          if (!ours) continue;
-          await captureWar(w, "cwl", group.season, wt);
+          const oursIsClan = normalizeTag(w.clan?.tag ?? "") === canonTag;
+          const oursIsOpp = normalizeTag(w.opponent?.tag ?? "") === canonTag;
+          if (!oursIsClan && !oursIsOpp) continue;
+          // CWL wars can return our clan on the opponent side — normalize so
+          // `clan` is always us (stars/attacks/members are stored clan-side).
+          const war =
+            oursIsClan || !w.opponent
+              ? w
+              : { ...w, clan: w.opponent, opponent: w.clan };
+          await captureWar(war, "cwl", group.season, wt);
           captured++;
           // /currentwar mirrors the active CWL round and may have stored
           // it as a regular war — drop the dupe (attacks cascade).
-          const wStart = parseCocTime(w.startTime);
+          const wStart = parseCocTime(war.startTime);
           if (wStart) {
             await prisma.cocWar.deleteMany({
               where: {
                 type: "regular",
                 startTime: wStart,
-                opponentTag: w.opponent?.tag
-                  ? normalizeTag(w.opponent.tag)
+                opponentTag: war.opponent?.tag
+                  ? normalizeTag(war.opponent.tag)
                   : null,
               },
             });
@@ -487,9 +498,12 @@ export async function snapshotMembers(): Promise<string> {
           heroEquipment: p.heroEquipment
             ? JSON.stringify(p.heroEquipment)
             : null,
+          // The API folds pets into troops[] — split them by gamedata type.
           troops: p.troops
             ? JSON.stringify(
-                p.troops.filter((t) => t.village === "home")
+                p.troops.filter(
+                  (t) => t.village === "home" && !isPet(t.name)
+                )
               )
             : null,
           spells: p.spells
@@ -497,9 +511,11 @@ export async function snapshotMembers(): Promise<string> {
                 p.spells.filter((s) => s.village === "home")
               )
             : null,
-          pets: p.pets
+          pets: p.troops
             ? JSON.stringify(
-                p.pets.filter((x) => x.village === "home")
+                p.troops.filter(
+                  (t) => t.village === "home" && isPet(t.name)
+                )
               )
             : null,
         },

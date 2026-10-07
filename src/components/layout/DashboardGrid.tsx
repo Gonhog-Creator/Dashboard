@@ -40,6 +40,7 @@ import {
   CocWidget,
   type CocWidgetData,
 } from "@/components/coc/CocWidget";
+import { RefreshTile } from "@/components/RefreshTile";
 import { cn } from "@/lib/utils";
 import type { TonightConditions } from "@/types";
 import type { SysData } from "@/lib/system";
@@ -190,6 +191,15 @@ const WIDGETS: Record<string, WidgetDef> = {
       </Widget>
     ),
   },
+  refresh: {
+    minW: 1,
+    minH: 3,
+    render: () => (
+      <Widget title="Refresh" className="h-full" contentClassName={SCROLL}>
+        <RefreshTile />
+      </Widget>
+    ),
+  },
 };
 
 /** Default arrangement at 6 columns — 2 grid units = 1 of the old fixed columns. */
@@ -205,6 +215,7 @@ const DEFAULT_LAYOUT: LayoutItem[] = [
   { i: "links", x: 0, y: 20, w: 2, h: 4 },
   { i: "finance", x: 2, y: 24, w: 2, h: 4 },
   { i: "coc", x: 4, y: 24, w: 2, h: 4 },
+  { i: "refresh", x: 0, y: 24, w: 2, h: 4 },
 ];
 
 export interface SavedLayout {
