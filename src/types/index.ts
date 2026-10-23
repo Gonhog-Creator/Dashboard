@@ -90,6 +90,15 @@ export interface FilterBreakdown {
   dates?: FilterDateBreakdown[]; // per-date subs; absent on pre-change scans
 }
 
+/** One mosaic grid position ("1-1", "2-3") with its per-filter totals. */
+export interface MosaicPanel {
+  row: number;
+  col: number;
+  frames: number;
+  seconds: number;
+  filters: { filter: string; frames: number; seconds: number }[];
+}
+
 export interface FitsTargetSummary {
   object: string; // canonical name (catalog name when resolvable)
   aliases: string[]; // distinct raw OBJECT names merged into this target
@@ -98,6 +107,7 @@ export interface FitsTargetSummary {
   totalBytes: number;
   sessions: { date: string; frames: number; seconds: number; bytes: number; path: string }[];
   filters: FilterBreakdown[];
+  panels: MosaicPanel[]; // empty for non-mosaic targets
   finals: string[]; // image paths relative to scan root
   lastImagedAt: string | null;
 }
@@ -115,6 +125,7 @@ export interface LibraryTarget {
   lastImagedAt: string | null;
   published: boolean;
   filters: FilterBreakdown[];
+  panels: MosaicPanel[]; // per-panel filter counts for Mosaic/ captures
   finals: string[];
   cover: string | null; // user-chosen cover image (rel path), else null
   /** Integration per scope, derived from session paths (e.g. "SeeStar"). */

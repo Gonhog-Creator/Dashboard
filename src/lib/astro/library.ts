@@ -2,7 +2,7 @@ import path from "path";
 import { prisma, ensureWal } from "@/lib/db";
 import { getAstroCovers, getFitsScanPath } from "@/lib/settings";
 import { commonNameFor } from "./catalog";
-import type { FilterBreakdown, LibraryTarget } from "@/types";
+import type { FilterBreakdown, LibraryTarget, MosaicPanel } from "@/types";
 
 function parseJson<T>(raw: string | null, fallback: T): T {
   if (!raw) return fallback;
@@ -43,11 +43,17 @@ export async function getLibraryTargets(): Promise<LibraryTarget[]> {
       agg.seconds += s.seconds;
       perScope.set(scope, agg);
     }
+    const aliases = parseJson<string[]>(t.aliases, []);
     return {
       id: t.id,
       name: t.name,
-      commonName: commonNameFor(t.name),
-      aliases: parseJson<string[]>(t.aliases, []),
+      commonName:
+        commonNameFor(t.name) ??
+        aliases
+          .map((a) => commonNameFor(a))
+          .find((c): c is string => c !== null) ??
+        null,
+      aliases,
       scopes: [...scopes].sort(),
       totalFrames: t.totalFrames,
       totalSeconds: t.totalSeconds,
@@ -55,6 +61,7 @@ export async function getLibraryTargets(): Promise<LibraryTarget[]> {
       lastImagedAt: t.lastImagedAt?.toISOString() ?? null,
       published: t.published,
       filters: parseJson<FilterBreakdown[]>(t.filters, []),
+      panels: parseJson<MosaicPanel[]>(t.panels, []),
       finals: parseJson<string[]>(t.finals, []),
       cover: covers[t.name] ?? null,
       scopeBreakdown: [...perScope.entries()]

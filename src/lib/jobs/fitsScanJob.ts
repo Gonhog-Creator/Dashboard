@@ -26,6 +26,7 @@ export async function runFitsScan(): Promise<string> {
       lastImagedAt: t.lastImagedAt ? new Date(t.lastImagedAt) : null,
       aliases: JSON.stringify(t.aliases),
       filters: JSON.stringify(t.filters),
+      panels: JSON.stringify(t.panels),
       finals: JSON.stringify(t.finals),
     };
     const target = await prisma.astroTarget.upsert({

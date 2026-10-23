@@ -17,6 +17,7 @@ const FILES = [
   "spells",
   "equipment",
   "obstacles",
+  "decorations",
   "guardians",
   "helpers",
 ] as const;

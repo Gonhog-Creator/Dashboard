@@ -37,6 +37,7 @@ model AstroTarget {
   aliases      String?        // JSON array of raw OBJECT names merged into this target
   filters      String?        // JSON array of FilterBreakdown
   finals       String?        // JSON array of final-image paths relative to scan root
+  panels       String?        // JSON array of MosaicPanel (per-grid-position filter counts)
   totalFrames  Int            @default(0)
   totalSeconds Float          @default(0)
   totalBytes   Float          @default(0)

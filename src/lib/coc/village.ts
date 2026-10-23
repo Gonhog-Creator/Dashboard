@@ -12,8 +12,25 @@ import gamedata from "./gamedata.json";
 
 const CDN = "https://assets.clashk.ing";
 
+/**
+ * Items newer than ClashKing's static_data — resolved from the live game
+ * CSVs (v18.647: decos_logic.scindex row order + localization TIDs).
+ * Drop entries once upstream catches up.
+ */
+const EXTRA: Record<string, [string, string, string, number[]]> = {
+  "18000242": ["Emerald Hot Streak", "decorations", "home", []],
+  "18000243": ["Ultimate Hot Streak", "decorations", "home", []],
+  "18000244": ["Amber Hot Streak", "decorations", "home", []],
+  "18000245": ["Violet Hot Streak", "decorations", "home", []],
+  "18000246": ["Clash Contest", "decorations", "home", []],
+  "18000247": ["Coin Collector", "decorations", "home", []],
+  "18000248": ["Sour Elixir Fountain", "decorations", "home", []],
+  "18000250": ["Portal Staff", "decorations", "home", []],
+  "8000139": ["Curious Stump", "obstacles", "home", []],
+};
+
 /** id → [name, type, village, reqTH[]] (reqTH[i] = TH required for level i+1) */
-const DATA = gamedata as unknown as Record<
+const DATA = { ...gamedata, ...EXTRA } as unknown as Record<
   string,
   [string, string, string, number[]]
 >;
@@ -134,7 +151,7 @@ export function slugify(name: string): string {
     .toLowerCase()
     .replace(/\./g, "")
     .replace(/ /g, "_")
-    .replace(/["?!\\]/g, ""); // CDN filenames drop quotes/punctuation (apostrophes stay)
+    .replace(/["?!\\\u2019]/g, ""); // CDN drops quotes/punct + curly ’ (straight ' stays)
 }
 
 export function iconUrl(kind: IconKind, name: string, lvl?: number): string {
@@ -276,6 +293,11 @@ const ICON_OVERRIDE: Record<number, string> = {
   1000064: "/coc/bobs_hut.png", // B.O.B's Hut
   1000093: "/coc/helper_hut.png", // Helper Hut
   1000097: "/coc/crafting_station.png", // Crafting Station
+  // Newer than the CDN — bundled locally.
+  18000246: "/coc/clash_contest.webp", // Clash Contest
+  18000247: "/coc/coin_collector.webp", // Coin Collector
+  18000248: "/coc/sour_elixir_fountain.webp", // Sour Elixir Fountain
+  18000250: "/coc/portal_staff.webp", // Portal Staff
 };
 
 /** "dataId:lvl" → icon URL, for levels newer than the CDN's art. */

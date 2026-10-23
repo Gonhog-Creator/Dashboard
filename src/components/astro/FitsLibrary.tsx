@@ -22,10 +22,12 @@ import {
   ArrowUpRight,
   ChevronDown,
   RefreshCw,
+  Search,
   Star,
 } from "lucide-react";
+import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
-import type { LibraryTarget } from "@/types";
+import type { LibraryTarget, MosaicPanel } from "@/types";
 import { cn } from "@/lib/utils";
 
 const MIN_SECONDS = 3600; // hide targets under 1h of integration
@@ -49,10 +51,10 @@ interface TargetDelta {
   newFinals: number;
 }
 
-/** Signed hours like +1.4h / −0.8h. */
+/** Signed duration like +1h 42m / −48m. */
 function fmtDeltaHours(seconds: number) {
   const sign = seconds < 0 ? "\u2212" : "+";
-  return `${sign}${Math.abs(seconds / 3600).toFixed(1)}h`;
+  return `${sign}${fmtHours(Math.abs(seconds))}`;
 }
 
 function fmtDeltaInt(v: number) {
@@ -119,8 +121,12 @@ function diffScan(prev: LibraryTarget[], next: LibraryTarget[]) {
   };
 }
 
+/** Duration like "1h 42m" (or "42m" under an hour). */
 function fmtHours(seconds: number) {
-  return (seconds / 3600).toFixed(1);
+  const mins = Math.round(seconds / 60);
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
 }
 
 function fmtGB(bytes: number) {
@@ -182,6 +188,7 @@ export function FitsLibrary({
   const [scanning, setScanning] = useState(false);
   const [progress, setProgress] = useState<ScanProgress | null>(null);
   const [selected, setSelected] = useState<LibraryTarget | null>(null);
+  const [query, setQuery] = useState("");
   const [scanDiff, setScanDiff] = useState<ReturnType<
     typeof diffScan
   > | null>(null);
@@ -231,18 +238,40 @@ export function FitsLibrary({
     }
   }
 
-  const visible = targets.filter((t) => t.totalSeconds >= MIN_SECONDS);
+  const q = query.trim().toLowerCase();
+  // While searching, drop the ≥1h gate so short sessions are findable too.
+  const visible = q
+    ? targets.filter(
+        (t) =>
+          t.name.toLowerCase().includes(q) ||
+          t.commonName?.toLowerCase().includes(q) ||
+          t.aliases.some((a) => a.toLowerCase().includes(q))
+      )
+    : targets.filter((t) => t.totalSeconds >= MIN_SECONDS);
   const mid = Math.ceil(visible.length / 2);
   const columns = [visible.slice(0, mid), visible.slice(mid)];
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center gap-2">
         <span className="text-xs text-muted-foreground">
-          {visible.length} targets ≥1h
-          {targets.length > visible.length &&
-            ` (${targets.length - visible.length} shorter hidden)`}
+          {q
+            ? `${visible.length} match${visible.length === 1 ? "" : "es"}`
+            : `${visible.length} targets ≥1h${
+                targets.length > visible.length
+                  ? ` (${targets.length - visible.length} shorter hidden)`
+                  : ""
+              }`}
         </span>
+        <div className="relative ml-auto">
+          <Search className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search targets…"
+            className="h-7 w-44 pl-7 text-xs"
+          />
+        </div>
         <Button
           size="sm"
           variant="secondary"
@@ -285,8 +314,9 @@ export function FitsLibrary({
         <p className="text-sm text-muted-foreground">Loading…</p>
       ) : visible.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          No targets with 1h+ of integration — set the scan path in Settings and
-          run a scan.
+          {q
+            ? `No targets match "${query.trim()}".`
+            : "No targets with 1h+ of integration — set the scan path in Settings and run a scan."}
         </p>
       ) : (
         <div className="grid grid-cols-1 gap-x-6 gap-y-0 xl:grid-cols-2">
@@ -527,7 +557,7 @@ function TargetDetail({
             )}
 
             <div className="grid grid-cols-3 gap-2 text-sm">
-              <Stat label="Integration" value={`${fmtHours(target.totalSeconds)}h`} />
+              <Stat label="Integration" value={fmtHours(target.totalSeconds)} />
               <Stat label="Frames" value={String(target.totalFrames)} />
               <Stat label="Size" value={`${fmtGB(target.totalBytes)}GB`} />
             </div>
@@ -539,11 +569,13 @@ function TargetDetail({
                     <span className="font-medium text-foreground">
                       {s.scope}
                     </span>{" "}
-                    {fmtHours(s.seconds)}h · {s.frames}×
+                    {fmtHours(s.seconds)} · {s.frames}×
                   </span>
                 ))}
               </div>
             )}
+
+            {target.panels.length > 0 && <PanelGrid panels={target.panels} />}
 
             {target.filters.length > 0 && (
               <div>
@@ -594,7 +626,7 @@ function TargetDetail({
                                 : fmtSubs(f.subSeconds)}
                             </TableCell>
                             <TableCell className="text-right tabular-nums">
-                              {fmtHours(f.seconds)}h
+                              {fmtHours(f.seconds)}
                             </TableCell>
                           </TableRow>
                           {open && (
@@ -621,7 +653,7 @@ function TargetDetail({
                                       >
                                         <span>{fmtDate(d.date)}</span>
                                         <span className="tabular-nums">
-                                          {d.frames}× · {fmtHours(d.seconds)}h
+                                          {d.frames}× · {fmtHours(d.seconds)}
                                         </span>
                                       </li>
                                     ))}
@@ -648,7 +680,7 @@ function TargetDetail({
                     <li key={s.id} className="flex justify-between">
                       <span>{s.date}</span>
                       <span className="tabular-nums">
-                        {s.frames}× · {fmtHours(s.seconds)}h
+                        {s.frames}× · {fmtHours(s.seconds)}
                       </span>
                     </li>
                   ))}
@@ -660,6 +692,59 @@ function TargetDetail({
         )}
       </DialogContent>
     </Dialog>
+  );
+}
+
+/**
+ * Mosaic panels laid out on their R-C grid. Gaps inside the bounding grid
+ * render as dashed cells so missing panels are obvious at a glance.
+ */
+function PanelGrid({ panels }: { panels: MosaicPanel[] }) {
+  const byPos = new Map(panels.map((p) => [`${p.row}-${p.col}`, p]));
+  const maxRow = Math.max(...panels.map((p) => p.row));
+  const maxCol = Math.max(...panels.map((p) => p.col));
+  const cells = [];
+  for (let r = 1; r <= maxRow; r++) {
+    for (let c = 1; c <= maxCol; c++) {
+      const p = byPos.get(`${r}-${c}`);
+      cells.push(
+        p ? (
+          <div key={`${r}-${c}`} className="rounded-md bg-muted/50 px-2 py-1.5">
+            <div className="flex items-baseline justify-between gap-1">
+              <span className="text-xs font-medium tabular-nums">
+                {r}-{c}
+              </span>
+              <span className="text-[10px] tabular-nums text-muted-foreground">
+                {fmtHours(p.seconds)}
+              </span>
+            </div>
+            <p className="text-[10px] leading-4 text-muted-foreground">
+              {p.filters.map((f) => `${f.filter} ×${f.frames}`).join(" · ")}
+            </p>
+          </div>
+        ) : (
+          <div
+            key={`${r}-${c}`}
+            className="rounded-md border border-dashed border-border px-2 py-1.5 text-[10px] tabular-nums text-muted-foreground/50"
+          >
+            {r}-{c}
+          </div>
+        )
+      );
+    }
+  }
+  return (
+    <div>
+      <p className="mb-1 text-xs font-medium text-muted-foreground">
+        Mosaic panels
+      </p>
+      <div
+        className="grid gap-1.5"
+        style={{ gridTemplateColumns: `repeat(${maxCol}, minmax(0, 1fr))` }}
+      >
+        {cells}
+      </div>
+    </div>
   );
 }
 

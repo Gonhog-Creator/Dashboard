@@ -11,6 +11,8 @@ export interface CatalogTarget {
   dec: number; // degrees
   type: "galaxy" | "nebula" | "cluster" | "planetary" | "snr" | "globular" | "open" | "other";
   mag: number | null;
+  /** Exclude from the visibility planner (moving bodies, non-point regions). */
+  noPlan?: boolean;
 }
 
 export const CATALOG: CatalogTarget[] = [
@@ -165,7 +167,7 @@ export const CATALOG: CatalogTarget[] = [
   { name: "NGC 7662", aliases: ["Blue Snowball"], ra: 23.432, dec: 42.55, type: "planetary", mag: 8.3 },
   { name: "NGC 1333", aliases: ["Embryo Nebula"], ra: 3.488, dec: 31.417, type: "nebula", mag: 5.6 },
   { name: "Sh2-132", aliases: ["Lion Nebula"], ra: 22.32, dec: 56.083, type: "nebula", mag: null },
-  { name: "NGC 2174", aliases: ["Monkey Head Nebula"], ra: 6.152, dec: 20.633, type: "nebula", mag: 6.8 },
+  { name: "NGC 2174", aliases: ["Monkey Head Nebula", "NGC 2175"], ra: 6.152, dec: 20.633, type: "nebula", mag: 6.8 },
   { name: "NGC 2403", aliases: [], ra: 7.615, dec: 65.6, type: "galaxy", mag: 8.4 },
   { name: "NGC 2841", aliases: [], ra: 9.368, dec: 50.967, type: "galaxy", mag: 9.2 },
   { name: "NGC 3184", aliases: [], ra: 10.302, dec: 41.417, type: "galaxy", mag: 9.8 },
@@ -193,6 +195,19 @@ export const CATALOG: CatalogTarget[] = [
   { name: "NGC 1097", aliases: [], ra: 2.772, dec: -30.283, type: "galaxy", mag: 9.3 },
   { name: "NGC 1672", aliases: [], ra: 4.762, dec: -59.25, type: "galaxy", mag: 9.7 },
   { name: "NGC 2442", aliases: ["Meathook Galaxy"], ra: 7.607, dec: -69.533, type: "galaxy", mag: 10.4 },
+  { name: "NGC 772", aliases: ["Fiddlehead Galaxy", "Arp 78"], ra: 1.988, dec: 19.008, type: "galaxy", mag: 10.3 },
+  { name: "IC 5070", aliases: ["Pelican Nebula"], ra: 20.85, dec: 44.35, type: "nebula", mag: 8.0 },
+  { name: "IC 443", aliases: ["Jellyfish Nebula"], ra: 6.28, dec: 22.52, type: "snr", mag: null },
+  { name: "IC 4592", aliases: ["Blue Horsehead Nebula"], ra: 16.2, dec: -19.45, type: "nebula", mag: null },
+  { name: "IC 1318", aliases: ["Gamma Cygni Nebula"], ra: 20.36, dec: 40.2, type: "nebula", mag: null },
+  { name: "SH2-114", aliases: ["Flying Dragon Nebula"], ra: 21.65, dec: 47.5, type: "nebula", mag: null },
+  { name: "NGC 1316", aliases: ["Fornax A"], ra: 3.38, dec: -37.2, type: "galaxy", mag: 8.9 },
+  { name: "NGC 6910", aliases: ["Rocking Horse Cluster"], ra: 20.38, dec: 40.77, type: "open", mag: 7.4 },
+  { name: "NGC 1893", aliases: ["Tadpole Cluster"], ra: 5.37, dec: 33.4, type: "open", mag: 7.5 },
+  { name: "AE Aurigae", aliases: ["Flaming Star"], ra: 5.27, dec: 34.3, type: "other", mag: 6.0 },
+  // Comet — ra/dec is a fixed snapshot, not meaningful for a moving body.
+  { name: "C2025 A6 (Lemmon)", aliases: ["Comet Lemmon", "C/2025 A6"], ra: 0, dec: 0, type: "other", mag: null, noPlan: true },
+  { name: "Markarian's Chain", aliases: ["Markarian's Chain", "Eyes Galaxies region"], ra: 12.43, dec: 13.15, type: "galaxy", mag: null },
 ];
 
 const byName = new Map<string, CatalogTarget>();

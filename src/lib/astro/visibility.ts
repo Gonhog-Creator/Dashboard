@@ -52,6 +52,7 @@ export function visibleTonight(
   }
 
   for (const t of CATALOG) {
+    if (t.noPlan) continue; // moving bodies / non-point regions
     let maxAlt = -90;
     let transit: Date | null = null;
     let aboveMin = 0;

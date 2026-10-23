@@ -9,6 +9,8 @@ const FINALS_DIR = "Finals";
 const HEADER_BLOCK = 2880;
 const MAX_HEADER_BLOCKS = 40; // ~115KB — covers any realistic header
 const CALIBRATION_TYPES = /dark|flat|bias|offset|calib/i;
+const MOSAIC_DIR = /^mosaic$/i;
+const PANEL_STEM = /^(\d+)-(\d+)$/;
 
 // Tokens ignored when matching final-image filenames to targets.
 const STOP_TOKENS = new Set([
@@ -215,6 +217,16 @@ interface TargetAccum {
   totalSeconds: number;
   totalBytes: number;
   sessions: { date: string; frames: number; seconds: number; bytes: number; path: string }[];
+  panels: Map<
+    string,
+    {
+      row: number;
+      col: number;
+      frames: number;
+      seconds: number;
+      filters: Map<string, { frames: number; seconds: number }>;
+    }
+  >;
   filters: Map<
     string,
     {
@@ -237,6 +249,40 @@ function modalExptime(exptimes: Map<number, number>): number | null {
     }
   }
   return best;
+}
+
+/**
+ * Grid coordinates for mosaic subs: files named "R-C" ("1-1.fit", "2-3.fits")
+ * under a folder literally named "Mosaic". Returns null for everything else.
+ */
+function mosaicPanel(
+  root: string,
+  filePath: string
+): { row: number; col: number } | null {
+  const m = PANEL_STEM.exec(
+    path.basename(filePath, path.extname(filePath)).trim()
+  );
+  if (!m) return null;
+  const rel = path.relative(root, path.dirname(filePath));
+  if (!rel.split(path.sep).some((seg) => MOSAIC_DIR.test(seg))) return null;
+  return { row: parseInt(m[1], 10), col: parseInt(m[2], 10) };
+}
+
+/**
+ * Target name from ancestor folders when OBJECT is useless ("Unknown" etc).
+ * Convention: <root>/<scope>/<target>/<session>/<lights>. Prefers the first
+ * segment that resolves in the catalog; else the first with real name tokens.
+ */
+function objectFromDirs(root: string, filePath: string): string | null {
+  const rel = path.relative(root, path.dirname(filePath));
+  const segments = rel.split(path.sep).filter(Boolean).slice(1); // skip scope dir
+  let firstNamed: string | null = null;
+  for (const seg of segments) {
+    const cat = findInCatalog(seg);
+    if (cat) return cat.name;
+    if (!firstNamed && tokenize(seg).size > 0) firstNamed = seg;
+  }
+  return firstNamed;
 }
 
 /** Directory segments between the scan root and the file's folder (skips the scope dir). */
@@ -356,7 +402,17 @@ async function scanFitsLibraryImpl(root: string): Promise<FitsScanResult> {
       if (!entry.valid || !entry.object) continue;
 
       fileCount++;
-      const rawObject = entry.object;
+      const panel = mosaicPanel(root, file);
+      // Mosaic subs can carry panel coords in OBJECT ("M31 1-1") — strip them
+      // so every panel merges into one mosaic target.
+      let rawObject = panel
+        ? entry.object.replace(/[\s_\-]*\d+-\d+$/, "").trim() || entry.object
+        : entry.object;
+      // Some subs ship OBJECT="Unknown" — recover the target from the
+      // folder path instead ("IC 1805 - Heart Nebula" -> "IC 1805").
+      if (/^(unknown|none|null|n\/a|-)$/i.test(rawObject.trim())) {
+        rawObject = objectFromDirs(root, file) ?? rawObject;
+      }
       // Merge catalog variants ("M 31", "NGC 224", "Andromeda") into one
       // target; non-catalog names merge on their alphanumeric-normalized key
       // ("Markarian's Chain" == "Markarians Chain").
@@ -381,6 +437,7 @@ async function scanFitsLibraryImpl(root: string): Promise<FitsScanResult> {
           totalSeconds: 0,
           totalBytes: 0,
           sessions: [],
+          panels: new Map(),
           filters: new Map(),
           lastImagedAt: null,
         };
@@ -407,6 +464,21 @@ async function scanFitsLibraryImpl(root: string): Promise<FitsScanResult> {
       fd.frames++;
       fd.seconds += seconds;
       f.dates.set(date, fd);
+
+      if (panel) {
+        const pKey = `${panel.row}-${panel.col}`;
+        let p = t.panels.get(pKey);
+        if (!p) {
+          p = { ...panel, frames: 0, seconds: 0, filters: new Map() };
+          t.panels.set(pKey, p);
+        }
+        p.frames++;
+        p.seconds += seconds;
+        const pf = p.filters.get(filterName) ?? { frames: 0, seconds: 0 };
+        pf.frames++;
+        pf.seconds += seconds;
+        p.filters.set(filterName, pf);
+      }
 
       let s = t.sessions.find(
         (x) => x.date === date && x.path === path.dirname(file)
@@ -495,6 +567,21 @@ async function scanFitsLibraryImpl(root: string): Promise<FitsScanResult> {
             .sort((a, b) => a.date.localeCompare(b.date)),
         }))
         .sort((a, b) => b.seconds - a.seconds),
+      panels: [...t.panels.values()]
+        .map((p) => ({
+          row: p.row,
+          col: p.col,
+          frames: p.frames,
+          seconds: p.seconds,
+          filters: [...p.filters.entries()]
+            .map(([filter, f]) => ({
+              filter,
+              frames: f.frames,
+              seconds: f.seconds,
+            }))
+            .sort((a, b) => b.seconds - a.seconds),
+        }))
+        .sort((a, b) => a.row - b.row || a.col - b.col),
       finals: (finalsByTarget.get(key) ?? []).sort(),
       lastImagedAt: t.lastImagedAt,
     })
